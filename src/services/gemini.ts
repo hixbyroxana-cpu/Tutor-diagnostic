@@ -4,9 +4,13 @@ import { TestLevel, Question } from '../types';
 // Initialize Gemini API
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-export const generateDiagnosticTest = async (level: TestLevel): Promise<Question[]> => {
+export const generateDiagnosticTest = async (level: TestLevel, aiPrompt: string): Promise<Question[]> => {
   const prompt = `You are an expert mathematics tutor in the UK educational system.
 Generate a 20-question multiple-choice diagnostic test for ${level} Maths.
+
+${aiPrompt ? `Context/Instructions for the AI (strictly follow this): ${aiPrompt}` : ''}
+
+ENSURE the difficulty correlates PRECISELY to the UK curriculum level specified (${level}). The questions must NOT be too difficult for this level. DO NOT OVERCOMPLICATE.
 
 Provide the response as a JSON array of objects, with NO surrounding markdown formatting or backticks.
 Exactly 20 elements. 
@@ -33,7 +37,7 @@ Each object must follow this exact structure:
   }
 }
 
-Ensure the questions cover a wide range of topics suitable for ${level}.
+Ensure the questions cover a wide range of topics suitable for ${level}. Ensure variety to avoid repeating very similar questions.
 At least 4 questions MUST include visual elements (bar charts, pie charts, or coordinate grids).
 Choices should include common misconceptions as distractors.
 6 string choices per question.`;
@@ -44,6 +48,7 @@ Choices should include common misconceptions as distractors.
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
+        temperature: 0.8, // Add variability so tests aren't identical
       }
     });
 
@@ -65,6 +70,8 @@ Choices should include common misconceptions as distractors.
 export const generateSpecificQuestions = async (level: TestLevel, description: string, count: number = 3): Promise<Question[]> => {
   const prompt = `You are an expert mathematics tutor in the UK educational system.
 Generate ${count} multiple-choice question(s) for ${level} Maths based on this description/topic: "${description}".
+
+ENSURE the difficulty correlates PRECISELY to the UK curriculum level specified (${level}). The questions must NOT be too difficult for this level. DO NOT OVERCOMPLICATE.
 
 Provide the response as a JSON array of objects, with NO surrounding markdown formatting or backticks.
 Exactly ${count} elements. 
@@ -100,6 +107,7 @@ Choices should include common misconceptions as distractors.
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
+        temperature: 0.8,
       }
     });
 

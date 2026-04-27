@@ -1,5 +1,5 @@
 export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
-export type TestLevel = 'Year 4' | 'Year 5' | 'Year 6' | '11+' | 'KS3' | 'GCSE Foundation' | 'GCSE Higher';
+export type TestLevel = 'Year 2' | 'Year 3' | 'Year 4' | 'Year 5' | 'Year 6' | '11+' | 'KS3' | 'GCSE Foundation' | 'GCSE Higher' | 'A-Level' | 'Adult';
 
 export type VisualAspectType = 'none' | 'bar_chart' | 'pie_chart' | 'coordinate_grid';
 
@@ -30,6 +30,7 @@ export interface Test {
   level: TestLevel;
   slug: string;
   description: string;
+  aiPrompt?: string;
   questions: Question[];
   createdAt: number;
   updatedAt: number;

@@ -6,7 +6,7 @@ import { Test, TestLevel, Question, QuestionDifficulty, VisualAspectType } from 
 import { generateDiagnosticTest, generateSpecificQuestions } from '../services/gemini';
 import QuestionVisualizer from '../components/QuestionVisualizer';
 
-const LEVELS: TestLevel[] = ['Year 4', 'Year 5', 'Year 6', '11+', 'KS3', 'GCSE Foundation', 'GCSE Higher'];
+const LEVELS: TestLevel[] = ['Year 2', 'Year 3', 'Year 4', 'Year 5', 'Year 6', '11+', 'KS3', 'GCSE Foundation', 'GCSE Higher', 'A-Level', 'Adult'];
 
 export default function TestEditor() {
   const { id } = useParams();
@@ -21,6 +21,7 @@ export default function TestEditor() {
   const [level, setLevel] = useState<TestLevel>('KS3');
   const [slug, setSlug] = useState('');
   const [description, setDescription] = useState('');
+  const [aiPrompt, setAiPrompt] = useState('');
   const [questions, setQuestions] = useState<Question[]>([]);
   const [aiDrafts, setAiDrafts] = useState<Question[]>([]);
   const [genPrompt, setGenPrompt] = useState('');
@@ -36,6 +37,7 @@ export default function TestEditor() {
           setLevel(data.level);
           setSlug(data.slug);
           setDescription(data.description);
+          setAiPrompt(data.aiPrompt || '');
           setQuestions(data.questions || []);
         } else {
           setError('Test not found');
@@ -50,7 +52,7 @@ export default function TestEditor() {
     setGenerating(true);
     setError('');
     try {
-      const qs = await generateDiagnosticTest(level);
+      const qs = await generateDiagnosticTest(level, aiPrompt);
       setAiDrafts(qs);
       setExpandedQs(new Set([qs[0].id])); // Expand first one to show it worked
     } catch (err: any) {
@@ -116,6 +118,7 @@ export default function TestEditor() {
         level,
         slug,
         description,
+        aiPrompt,
         questions: finalQuestions,
         createdAt: id ? undefined : Date.now(),
         updatedAt: Date.now(),
@@ -241,13 +244,13 @@ export default function TestEditor() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Student Instructions (Optional)</label>
               <textarea 
                 value={description} 
                 onChange={e => setDescription(e.target.value)} 
-                rows={3}
+                rows={2}
                 className="w-full border-slate-200 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-2 text-sm" 
-                placeholder="Brief instruction for the student" 
+                placeholder="Message shown to students at the start of the test" 
               />
             </div>
           </div>
@@ -261,8 +264,18 @@ export default function TestEditor() {
               <div className="bg-white/60 p-4 rounded-xl border border-blue-100">
                 <h3 className="text-sm font-bold text-blue-900 mb-2">Generate Full Test</h3>
                 <p className="text-xs text-blue-700 mb-3 leading-relaxed">
-                  Generate 20 diagnostic questions for {level}. They will appear in the drafts area below for review.
+                  Generate 20 diagnostic questions for {level}.
                 </p>
+                <div className="mb-4">
+                  <label className="block text-xs font-bold text-blue-800 mb-1">Custom Prompt / Context (Optional)</label>
+                  <textarea 
+                    value={aiPrompt} 
+                    onChange={e => setAiPrompt(e.target.value)} 
+                    rows={2}
+                    className="w-full border-blue-200 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-2 text-sm" 
+                    placeholder="E.g. Focus specifically on fractions and ratio. Don't include geometry." 
+                  />
+                </div>
                 <button
                   onClick={handleGenerateFull}
                   disabled={generating}
