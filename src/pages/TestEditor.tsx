@@ -242,17 +242,6 @@ export default function TestEditor() {
                 />
               </div>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Student Instructions (Optional)</label>
-              <textarea 
-                value={description} 
-                onChange={e => setDescription(e.target.value)} 
-                rows={2}
-                className="w-full border-slate-200 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-2 text-sm" 
-                placeholder="Message shown to students at the start of the test" 
-              />
-            </div>
           </div>
 
           <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-6 shadow-sm">

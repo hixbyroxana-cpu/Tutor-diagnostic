@@ -118,7 +118,12 @@ export default function PublicTestRunner() {
               </span>
             </div>
             <div className="p-8">
-              <p className="text-slate-600 mb-8 text-center">{test.description || "Please fill in your details below to start the diagnostic test."}</p>
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-5 mb-8 text-center text-blue-900 text-sm leading-relaxed">
+                Welcome to your Maths diagnostic test! Please answer all questions by selecting the single best option. 
+                There is no strict time limit, but we recommend taking around <strong>30-45 minutes</strong> to complete the test.
+                <br /><br />
+                Please enter your details below to begin. Good luck!
+              </div>
               
               <form onSubmit={handleStart} className="space-y-5">
                 <div className="grid grid-cols-2 gap-5">

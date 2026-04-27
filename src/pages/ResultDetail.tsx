@@ -39,13 +39,7 @@ export default function ResultDetail() {
     if (!id) return;
     setGeneratingSummary(true);
     try {
-      const summary = await generateParentSummary(
-        data.studentFirstName,
-        data.testLevel,
-        data.score,
-        data.percentage,
-        data.weakTopics
-      );
+      const summary = await generateParentSummary(data);
       
       await updateDoc(doc(db, 'testResults', id), { parentSummary: summary });
       setResult(prev => prev ? { ...prev, parentSummary: summary } : null);
@@ -111,15 +105,25 @@ export default function ResultDetail() {
           </div>
 
           <div className="bg-slate-900 text-white rounded-xl p-6 shadow-sm space-y-4 relative">
-            <h3 className="font-semibold flex items-center gap-2">
-              <Mail className="w-4 h-4 text-blue-400" />
-              Parent Summary
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold flex items-center gap-2">
+                <Mail className="w-4 h-4 text-blue-400" />
+                Parent Summary
+              </h3>
+              <button 
+                onClick={() => generateSummary(result)} 
+                disabled={generatingSummary}
+                className="text-slate-400 hover:text-white transition"
+                title="Regenerate Summary"
+              >
+                <RefreshCw className={`w-4 h-4 ${generatingSummary ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
             {generatingSummary ? (
               <div className="text-sm text-slate-400 animate-pulse">Drafting summary with AI...</div>
             ) : (
               <>
-                <div className="text-sm leading-relaxed text-slate-300">
+                <div className="text-sm leading-relaxed text-slate-300 whitespace-pre-wrap">
                   {result.parentSummary}
                 </div>
                 <button 

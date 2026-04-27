@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { TestLevel, Question } from '../types';
+import { TestLevel, Question, TestResult } from '../types';
 
 // Initialize Gemini API
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -127,26 +127,37 @@ Choices should include common misconceptions as distractors.
 };
 
 export const generateParentSummary = async (
-  studentName: string,
-  level: string,
-  score: number,
-  percentage: number,
-  weakTopics: string[]
+  result: TestResult
 ): Promise<string> => {
+  const breakdownStr = result.topicBreakdown
+    .map(t => `- ${t.topic}: ${t.percentage}% (${t.status})`)
+    .join('\n');
+
+  const targetsStr = result.suggestedTargets.length > 0
+    ? result.suggestedTargets.map(t => `- ${t}`).join('\n')
+    : 'None, excellent performance across the board.';
+
   const prompt = `You are a professional, encouraging maths tutor.
-Generate a short, parent-friendly summary message for a student named ${studentName} who just completed a ${level} diagnostic test.
-They scored ${score}/20 (${percentage}%).
-Their weakest topics were: ${weakTopics.length > 0 ? weakTopics.join(', ') : 'None, they did excellently.'}
+Write a detailed, comprehensive report for the parent of a student named ${result.studentFirstName} who just completed a ${result.testLevel} Maths diagnostic test.
+They scored ${result.score}/${result.totalQuestions} (${result.percentage}%).
 
-Keep it to about 3 sentences. 
-Example style: "Hi, thank you for completing the diagnostic test. I have reviewed the result and it gives me a useful starting point. The main areas to focus on are fractions and ratio. In the first lesson, I will check these skills more closely and build a clear plan from there."
+Here is the breakdown by topic:
+${breakdownStr}
 
-Do NOT include greetings like "Dear [Parent]", just start the message directly ("Hi, thank you...").
+Here is a list of suggested targets for improvement:
+${targetsStr}
+
+Write a detailed multi-paragraph report (3-4 paragraphs) that:
+1. Warmly congratulates the student on completing the test and sets a positive, encouraging tone.
+2. Analyzes their detailed performance based on the specific topics. Highlight their areas of strength and explicitly identify areas that need more focus.
+3. Outlines the specific path forward based on the suggested targets (how you will help them in future lessons).
+
+Make sure the tone is professional, reassuring, and clearly points out actionable insight. Do NOT include generic greetings like "Dear [Parent]", just start the message directly ("Hi, thank you for completing...").
 `;
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-pro',
       contents: prompt,
     });
     return response.text?.trim() || "";
