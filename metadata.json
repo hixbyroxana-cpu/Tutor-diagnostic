@@ -1,0 +1,6 @@
+{
+  "name": "Tutor Diagnostic Hub",
+  "description": "Simple internal tutoring tool to send public diagnostic tests, mark them automatically, and review detailed results with Gemini-powered summaries.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

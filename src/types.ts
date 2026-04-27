@@ -1,0 +1,79 @@
+export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
+export type TestLevel = 'Year 4' | 'Year 5' | 'Year 6' | '11+' | 'KS3' | 'GCSE Foundation' | 'GCSE Higher';
+
+export type VisualAspectType = 'none' | 'bar_chart' | 'pie_chart' | 'coordinate_grid';
+
+export interface VisualData {
+  data?: { name: string; value: number }[]; // For pie/bar
+  point?: { x: number; y: number }; // For coordinate grids
+  xAxisLabel?: string;
+  yAxisLabel?: string;
+}
+
+export interface Question {
+  id: string; // generated client-side for tracking
+  question: string;
+  choices: string[]; // typically 6 choices
+  correctAnswer: string;
+  topic: string;
+  skill: string;
+  difficulty: QuestionDifficulty;
+  explanation: string;
+  target: string;
+  visualType?: VisualAspectType;
+  visualData?: VisualData;
+}
+
+export interface Test {
+  id?: string; // firestore id
+  title: string;
+  level: TestLevel;
+  slug: string;
+  description: string;
+  questions: Question[];
+  createdAt: number;
+  updatedAt: number;
+  isActive: boolean;
+}
+
+export interface QuestionResult {
+  questionId: string;
+  question: string;
+  selectedAnswer: string;
+  correctAnswer: string;
+  isCorrect: boolean;
+  topic: string;
+  target: string;
+}
+
+export interface TopicBreakdown {
+  topic: string;
+  total: number;
+  correct: number;
+  percentage: number;
+  status: 'weak' | 'developing' | 'secure'; // <60% | 60-79% | >=80%
+}
+
+export interface TestResult {
+  id?: string;
+  testId: string;
+  testSlug: string;
+  testTitle: string;
+  testLevel: TestLevel;
+  studentFirstName: string;
+  studentLastName: string;
+  studentFullName: string;
+  parentName: string;
+  parentEmail: string;
+  notes: string;
+  score: number;
+  totalQuestions: number;
+  percentage: number;
+  answers: QuestionResult[];
+  topicBreakdown: TopicBreakdown[];
+  weakTopics: string[];
+  suggestedTargets: string[];
+  parentSummary: string;
+  isNew: boolean;
+  completedAt: number;
+}
