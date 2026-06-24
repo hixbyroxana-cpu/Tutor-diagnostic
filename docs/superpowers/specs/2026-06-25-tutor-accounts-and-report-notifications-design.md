@@ -102,6 +102,16 @@ The existing 11+ and GCSE tests become the master template sources. Roxana's acc
 
 Migration will run only after Roxana's Firebase account exists, because ownership is stored by Firebase user ID rather than email address.
 
+The migration rollout must preserve current access:
+
+1. Deploy account creation while the existing dashboard remains available.
+2. Create and verify the `roxana.scurtu@yahoo.com` owner account.
+3. Assign all existing tests and results to that Firebase user ID.
+4. Verify Roxana can see the full pre-existing dashboard data.
+5. Only then enable the restrictive Firestore rules and authenticated dashboard guard.
+
+No existing test or result is deleted or recreated during migration. Existing document IDs, public slugs, and result links remain unchanged.
+
 ## Notification Email
 
 Email provider: Resend.
@@ -164,7 +174,11 @@ The attached PDF can be opened directly from the email without signing in.
 
 The production application will use `https://diagnostic.click`.
 
-The current `tutor-diagnostic.vercel.app` address remains available during setup and can later redirect to the custom domain. Links are generated from `APP_BASE_URL`, so switching the production domain is configuration-only.
+The current `https://tutor-diagnostic.vercel.app` address will remain assigned to the same Vercel project indefinitely for backward compatibility. It will not be removed or redirected during this phase.
+
+Existing public test links on the Vercel domain must continue to open the same tests and save results to the same Firestore database. This includes links sent before authentication is introduced and tests that may already be in progress.
+
+New links and notification emails will use `APP_BASE_URL=https://diagnostic.click`, but both domains will serve the same application and API routes. Public slugs and existing Firestore document IDs will not change.
 
 DNS responsibilities:
 
@@ -196,7 +210,10 @@ Implementation verification must cover:
 9. Completion email addressed to the owning tutor.
 10. No duplicate email on a retried submission.
 11. Existing data assigned to Roxana after migration.
-12. Production domain, Firebase authorized domain, and Resend DNS configuration.
+12. Roxana can see all pre-existing tests and reports before access restrictions are enabled.
+13. Previously issued `tutor-diagnostic.vercel.app/test/...` links still load and submit successfully.
+14. Both application domains point to the same production deployment and database.
+15. Production domain, Firebase authorized domains, and Resend DNS configuration.
 
 ## Later Billing Phase
 
