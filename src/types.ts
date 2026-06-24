@@ -1,11 +1,19 @@
 export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
 export type TestLevel = 'Year 2' | 'Year 3' | 'Year 4' | 'Year 5' | 'Year 6' | '11+' | 'KS3' | 'GCSE Foundation' | 'GCSE Higher' | 'A-Level' | 'Adult';
 
-export type VisualAspectType = 'none' | 'bar_chart' | 'pie_chart' | 'coordinate_grid';
+export type VisualAspectType = 'none' | 'bar_chart' | 'pie_chart' | 'coordinate_grid' | 'l_shape';
 
 export interface VisualData {
   data?: { name: string; value: number }[]; // For pie/bar
   point?: { x: number; y: number }; // For coordinate grids
+  points?: { x: number; y: number }[]; // For coordinate grids with multiple labelled points
+  lShape?: {
+    totalWidth: number;
+    totalHeight: number;
+    cutoutWidth: number;
+    cutoutHeight: number;
+    unit?: string;
+  };
   xAxisLabel?: string;
   yAxisLabel?: string;
 }
@@ -13,7 +21,7 @@ export interface VisualData {
 export interface Question {
   id: string; // generated client-side for tracking
   question: string;
-  choices: string[]; // typically 6 choices
+  choices: string[]; // new AI/manual questions use 4; older saved tests may have 6
   correctAnswer: string;
   topic: string;
   skill: string;

@@ -1,12 +1,199 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Save, Sparkles, Trash2, Plus, GripVertical, ChevronDown, ChevronRight, AlertCircle, Image as ImageIcon } from 'lucide-react';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { db, doc, getDoc, collection, addDoc, updateDoc } from '../firebase';
 import { Test, TestLevel, Question, QuestionDifficulty, VisualAspectType } from '../types';
-import { generateDiagnosticTest, generateSpecificQuestions } from '../services/gemini';
+import { generateSpecificQuestions } from '../services/gemini';
 import QuestionVisualizer from '../components/QuestionVisualizer';
 
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
 const LEVELS: TestLevel[] = ['Year 2', 'Year 3', 'Year 4', 'Year 5', 'Year 6', '11+', 'KS3', 'GCSE Foundation', 'GCSE Higher', 'A-Level', 'Adult'];
+const OVERALL_REVISION = 'Overall revision';
+const DEFAULT_11_PLUS_CHAPTERS = [
+  OVERALL_REVISION,
+  'Number - number and place value',
+  'Number - addition, subtraction, multiplication and division',
+  'Number - Fractions (including decimals and percentages)',
+  'Ratio and proportion',
+  'Algebra',
+  'Measurement',
+  'Geometry - properties of shapes',
+  'Geometry - position and direction',
+  'Statistics',
+];
+const DEFAULT_GCSE_HIGHER_CHAPTERS = [
+  OVERALL_REVISION,
+  'Paper 1 - Overall revision',
+  'Paper 1 - Number: fraction arithmetic, recurring decimals, prime factors, negative and fractional indices, surds, standard form',
+  'Paper 1 - Ratio: percentages, ratio notation, equations of proportion, density',
+  'Paper 1 - Algebra: simplification, brackets, algebraic fractions, inequalities, equations, quadratics, graphs, gradients',
+  'Paper 1 - Geometry: angles, triangle area, volume, surface area, Pythagoras, exact trig values, vector geometry',
+  'Paper 1 - Probability: probability and independent combined events',
+  'Paper 1 - Statistics: cumulative frequency, mean, interquartile range',
+  'Paper 2 - Overall revision',
+  'Paper 2 - Number: error intervals and calculator use',
+  'Paper 2 - Ratio: area, depreciation, direct and inverse proportion, currency conversion, pressure',
+  'Paper 2 - Algebra: simplification, factorisation, indices, linear/quadratic equations, coordinates, transformations of functions',
+  'Paper 2 - Geometry: transformations, circle theorems, area of a rectangle, volume, sine and cosine rules',
+  'Paper 2 - Probability: Venn diagrams and probability from a Venn diagram',
+  'Paper 2 - Statistics: box plots, quartiles, comparing distributions, capture-recapture',
+  'Paper 3 - Overall revision',
+  'Paper 3 - Number: negative numbers, laws of indices, bounds, product rule for counting',
+  'Paper 3 - Ratio: time, percentage decrease, depreciation, reverse percentage, ratio notation, direct proportion, average speed',
+  'Paper 3 - Algebra: simplification, brackets, substitution, changing subject, expressions, simultaneous equations, straight line graphs',
+  'Paper 3 - Geometry: circle theorems, trapezium area, similar triangles, Pythagoras, trigonometry, column vectors',
+  'Paper 3 - Probability: dependent combined events',
+  'Paper 3 - Statistics: frequency polygons and histograms',
+];
+const DEFAULT_GCSE_FOUNDATION_CHAPTERS = [
+  OVERALL_REVISION,
+  'Integers and place value',
+  'Decimals',
+  'Indices, powers and roots',
+  'Factors, multiples and primes',
+  'Algebra: the basics',
+  'Expanding and factorising single brackets',
+  'Expressions and substitution into formulae',
+  'Tables',
+  'Charts and graphs',
+  'Pie charts',
+  'Scatter graphs',
+  'Fractions',
+  'Fractions, decimals and percentages',
+  'Percentages',
+  'Equations',
+  'Inequalities',
+  'Sequences',
+  'Properties of shapes, parallel lines and angle facts',
+  'Interior and exterior angles of polygons',
+  'Statistics and sampling',
+  'The averages',
+  'Perimeter and area',
+  '3D forms and volume',
+  'Real-life graphs',
+  'Straight-line graphs',
+  'Transformations I: translations, rotations and reflections',
+  'Transformations II: enlargements and combinations',
+  'Ratio',
+  'Proportion',
+  'Right-angled triangles: Pythagoras and trigonometry',
+  'Probability I',
+  'Probability II',
+  'Multiplicative reasoning',
+  'Plans and elevations',
+  'Constructions, loci and bearings',
+  'Quadratic equations: expanding and factorising',
+  'Quadratic equations: graphs',
+  'Circles, cylinders, cones and spheres',
+  'Fractions and reciprocals',
+  'Indices and standard form',
+  'Similarity and congruence in 2D',
+  'Vectors',
+  'Rearranging equations, graphs of cubic and reciprocal functions and simultaneous equations',
+];
+
+const slugify = (value: string) => value
+  .trim()
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '');
+
+const cleanCurriculumLine = (line: string) => line
+  .trim()
+  .replace(/^[-*•\d.)\s]+/, '')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const isStandaloneCurriculumHeading = (line: string) =>
+  /^(Ratio and proportion|Algebra|Measurement|Statistics)$/i.test(line);
+
+const shouldSkipCurriculumLine = (line: string) =>
+  !line ||
+  /^11\+ Maths Curriculum$/i.test(line) ||
+  /^(Students|Pupils) should be taught to:?$/i.test(line) ||
+  /^This syllabus/i.test(line) ||
+  /^www\./i.test(line) ||
+  /^\d+$/.test(line);
+
+const parseCurriculumChapters = (value: string) => {
+  const lines = value
+    .split(/\r?\n/)
+    .map(cleanCurriculumLine)
+    .filter(line => !shouldSkipCurriculumLine(line));
+
+  const chapters: string[] = [];
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const isHeading = line.includes(' - ') || isStandaloneCurriculumHeading(line);
+
+    if (!isHeading) continue;
+
+    let chapter = line;
+    const next = lines[i + 1];
+    const nextLooksLikeContinuation = next &&
+      !next.includes(' - ') &&
+      !isStandaloneCurriculumHeading(next) &&
+      /^(and|percentages)/i.test(next);
+
+    if (nextLooksLikeContinuation) {
+      chapter = `${chapter} ${next}`;
+      i += 1;
+    }
+
+    chapters.push(chapter);
+  }
+
+  return chapters.length > 0 ? chapters : lines;
+};
+
+const buildDefaultTitle = (level: TestLevel, chapter: string) => {
+  if (level !== 'GCSE Foundation' && level !== 'GCSE Higher') return '';
+
+  if (!chapter || chapter === OVERALL_REVISION) {
+    return `${level} Overall Revision`;
+  }
+
+  return `${level} - ${chapter}`;
+};
+
+const extractTextFromPdf = async (file: File) => {
+  const data = new Uint8Array(await file.arrayBuffer());
+  const pdf = await pdfjsLib.getDocument({ data }).promise;
+  const pageTexts: string[] = [];
+
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const content = await page.getTextContent();
+    const rows = new Map<number, { x: number; text: string }[]>();
+
+    for (const item of content.items as any[]) {
+      if (!('str' in item) || !item.str.trim()) continue;
+
+      const y = Math.round(item.transform[5]);
+      const x = item.transform[4];
+      const row = rows.get(y) || [];
+      row.push({ x, text: item.str.trim() });
+      rows.set(y, row);
+    }
+
+    const text = [...rows.entries()]
+      .sort(([a], [b]) => b - a)
+      .map(([, row]) => row
+        .sort((a, b) => a.x - b.x)
+        .map(item => item.text)
+        .join(' ')
+      )
+      .join('\n');
+
+    pageTexts.push(text);
+  }
+
+  return pageTexts.join('\n');
+};
 
 export default function TestEditor() {
   const { id } = useParams();
@@ -18,15 +205,87 @@ export default function TestEditor() {
   const [error, setError] = useState('');
   
   const [title, setTitle] = useState('');
+  const [titleManuallyEdited, setTitleManuallyEdited] = useState(false);
   const [level, setLevel] = useState<TestLevel>('KS3');
-  const [slug, setSlug] = useState('');
   const [description, setDescription] = useState('');
   const [aiPrompt, setAiPrompt] = useState('');
+  const [curriculumText, setCurriculumText] = useState('');
+  const [selectedChapter, setSelectedChapter] = useState('');
   const [questions, setQuestions] = useState<Question[]>([]);
   const [aiDrafts, setAiDrafts] = useState<Question[]>([]);
   const [genPrompt, setGenPrompt] = useState('');
   const [genCount, setGenCount] = useState(1);
+  const [fullGenCount, setFullGenCount] = useState(10);
+  const [generationStatus, setGenerationStatus] = useState('');
   const [expandedQs, setExpandedQs] = useState<Set<string>>(new Set());
+  const showCurriculumSelector = level === '11+' || level === 'GCSE Foundation' || level === 'GCSE Higher';
+  const curriculumChapters = useMemo(() => parseCurriculumChapters(curriculumText), [curriculumText]);
+  const chapterOptions = useMemo(() => {
+    const customChapters = curriculumChapters.filter(chapter => chapter !== OVERALL_REVISION);
+
+    if (level === '11+') {
+      return Array.from(new Set([
+        ...DEFAULT_11_PLUS_CHAPTERS,
+        ...customChapters,
+      ]));
+    }
+
+    if (level === 'GCSE Higher') {
+      return Array.from(new Set([
+        ...DEFAULT_GCSE_HIGHER_CHAPTERS,
+        ...customChapters,
+      ]));
+    }
+
+    if (level === 'GCSE Foundation') {
+      return Array.from(new Set([
+        ...DEFAULT_GCSE_FOUNDATION_CHAPTERS,
+        ...customChapters,
+      ]));
+    }
+
+    return curriculumChapters;
+  }, [curriculumChapters, level]);
+  const curriculumHelperText = level === 'GCSE Foundation'
+    ? 'Foundation topics are used for easier GCSE-style questions and foundation-tier skills.'
+    : level === 'GCSE Higher'
+      ? 'Higher topics are organised by paper and used for higher-tier GCSE-style questions.'
+      : level === '11+'
+        ? '11+ topics are based on the built-in maths curriculum, with overall revision available.'
+        : '';
+  const generationContext = [
+    level === 'GCSE Foundation'
+      ? 'This is GCSE Foundation tier. Keep the questions at Foundation level and avoid Higher-only content. The final questions should include two-step and three-step Foundation problem-solving so the test does not feel too easy.'
+      : level === 'GCSE Higher'
+        ? 'This is GCSE Higher tier. Generate Higher-level GCSE questions, including more demanding reasoning where appropriate.'
+        : '',
+    selectedChapter === OVERALL_REVISION
+      ? `Generate an overall revision test across the ${level} curriculum.`
+      : selectedChapter
+        ? `Generate questions specifically from this curriculum chapter: ${selectedChapter}.`
+        : '',
+    aiPrompt,
+  ].filter(Boolean).join('\n\n');
+
+  useEffect(() => {
+    if (!showCurriculumSelector) {
+      setSelectedChapter('');
+      return;
+    }
+
+    if (chapterOptions.length > 0 && !chapterOptions.includes(selectedChapter)) {
+      setSelectedChapter(chapterOptions[0]);
+    }
+  }, [chapterOptions, selectedChapter, showCurriculumSelector]);
+
+  useEffect(() => {
+    if (id || titleManuallyEdited) return;
+
+    const defaultTitle = buildDefaultTitle(level, selectedChapter);
+    if (defaultTitle) {
+      setTitle(defaultTitle);
+    }
+  }, [id, level, selectedChapter, titleManuallyEdited]);
 
   useEffect(() => {
     if (id) {
@@ -35,7 +294,6 @@ export default function TestEditor() {
           const data = snap.data() as Test;
           setTitle(data.title);
           setLevel(data.level);
-          setSlug(data.slug);
           setDescription(data.description);
           setAiPrompt(data.aiPrompt || '');
           setQuestions(data.questions || []);
@@ -51,13 +309,30 @@ export default function TestEditor() {
     if (!level) return;
     setGenerating(true);
     setError('');
+    setGenerationStatus('');
     try {
-      const qs = await generateDiagnosticTest(level, aiPrompt);
-      setAiDrafts(qs);
-      setExpandedQs(new Set([qs[0].id])); // Expand first one to show it worked
+      const batches = Math.ceil(fullGenCount / 5);
+      const generated: Question[] = [];
+
+      for (let batch = 0; batch < batches; batch += 1) {
+        const remaining = fullGenCount - generated.length;
+        const batchSize = Math.min(5, remaining);
+        const batchPrompt = [
+          `Generate batch ${batch + 1} of ${batches} for a ${fullGenCount}-question diagnostic test.`,
+          'Avoid repeating skills or question styles already likely covered in the previous batches.',
+          generationContext,
+        ].filter(Boolean).join('\n\n');
+
+        setGenerationStatus(`Generating ${generated.length + batchSize} of ${fullGenCount}...`);
+        const qs = await generateSpecificQuestions(level, batchPrompt, batchSize);
+        generated.push(...qs);
+        setAiDrafts([...generated]);
+        setExpandedQs(new Set([generated[0].id]));
+      }
     } catch (err: any) {
       setError(err.message || 'Error generating test');
     } finally {
+      setGenerationStatus('');
       setGenerating(false);
     }
   };
@@ -66,15 +341,39 @@ export default function TestEditor() {
     if (!level || !genPrompt.trim()) return;
     setGenerating(true);
     setError('');
+    setGenerationStatus('');
     try {
-      const qs = await generateSpecificQuestions(level, genPrompt, genCount);
+      const description = selectedChapter && selectedChapter !== OVERALL_REVISION
+        ? `${genPrompt}\n\nCurriculum chapter: ${selectedChapter}`
+        : selectedChapter === OVERALL_REVISION
+          ? `${genPrompt}\n\nCurriculum scope: overall ${level} revision`
+        : genPrompt;
+      const qs = await generateSpecificQuestions(level, description, genCount);
       setAiDrafts(prev => [...prev, ...qs]);
       setExpandedQs(prev => new Set(prev).add(qs[0].id));
       setGenPrompt('');
     } catch (err: any) {
       setError(err.message || 'Error generating questions');
     } finally {
+      setGenerationStatus('');
       setGenerating(false);
+    }
+  };
+
+  const handleCurriculumUpload = async (file: File | undefined) => {
+    if (!file) return;
+
+    try {
+      const text = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+        ? await extractTextFromPdf(file)
+        : await file.text();
+
+      setCurriculumText(text);
+      const chapters = parseCurriculumChapters(text);
+      setSelectedChapter(chapters[0] || '');
+    } catch (err) {
+      console.error(err);
+      setError('Could not read that curriculum file. Please try a text, CSV, Markdown, or selectable-text PDF file.');
     }
   };
 
@@ -105,16 +404,17 @@ export default function TestEditor() {
 
   const handleSave = async () => {
     const finalQuestions = [...questions, ...aiDrafts];
+    const slug = slugify(title);
     
-    if (!title || !slug || finalQuestions.length === 0) {
-      setError('Title, slug, and at least 1 question are required.');
+    if (!title.trim() || finalQuestions.length === 0) {
+      setError('Title and at least 1 question are required.');
       return;
     }
     setSaving(true);
     setError('');
     try {
       const p: Test = {
-        title,
+        title: title.trim(),
         level,
         slug,
         description,
@@ -166,7 +466,7 @@ export default function TestEditor() {
     setQuestions([...questions, {
       id: newId,
       question: '',
-      choices: ['', '', '', '', '', ''],
+      choices: ['', '', '', ''],
       correctAnswer: '',
       topic: '',
       skill: '',
@@ -212,7 +512,10 @@ export default function TestEditor() {
               <input 
                 type="text" 
                 value={title} 
-                onChange={e => setTitle(e.target.value)} 
+                onChange={e => {
+                  setTitle(e.target.value);
+                  setTitleManuallyEdited(true);
+                }}
                 className="w-full border-slate-200 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-2" 
                 placeholder="e.g. Year 6 Initial Diagnostic" 
               />
@@ -229,19 +532,49 @@ export default function TestEditor() {
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">URL Slug</label>
-              <div className="flex bg-slate-50 border border-slate-300 rounded-md overflow-hidden shadow-sm">
-                <span className="bg-slate-100 text-slate-500 px-3 py-2 border-r border-slate-300 text-sm flex items-center">/test/</span>
-                <input 
-                  type="text" 
-                  value={slug} 
-                  onChange={e => setSlug(e.target.value)} 
-                  className="w-full focus:ring-0 border-none p-2" 
-                  placeholder="e.g. get-ready-for-year-6" 
+            {showCurriculumSelector && (
+              <div className="border-t border-slate-100 pt-4 space-y-3">
+                {chapterOptions.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Test Chapter</label>
+                    <select
+                      value={selectedChapter}
+                      onChange={e => setSelectedChapter(e.target.value)}
+                      className="w-full border-slate-200 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-2 bg-white text-sm"
+                    >
+                      {chapterOptions.map(chapter => <option key={chapter} value={chapter}>{chapter}</option>)}
+                    </select>
+                    {curriculumHelperText && (
+                      <p className="text-xs text-slate-500 mt-1">{curriculumHelperText}</p>
+                    )}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Custom Curriculum Chapters</label>
+                  <input
+                    type="file"
+                    accept=".txt,.md,.csv,.pdf,application/pdf"
+                    onChange={e => handleCurriculumUpload(e.target.files?.[0])}
+                    className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+                  />
+                </div>
+
+                <textarea
+                  value={curriculumText}
+                  onChange={e => {
+                    setCurriculumText(e.target.value);
+                    const chapters = parseCurriculumChapters(e.target.value);
+                    if (!chapters.includes(selectedChapter)) {
+                      setSelectedChapter(chapters[0] || '');
+                    }
+                  }}
+                  rows={4}
+                  className="w-full border-slate-200 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-2 text-sm"
+                  placeholder={level === '11+' ? 'Optional: paste extra 11+ chapters, one per line...' : 'Paste one chapter per line, e.g. Algebra, Fractions, Ratio and proportion...'}
                 />
               </div>
-            </div>
+            )}
           </div>
 
           <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-6 shadow-sm">
@@ -251,10 +584,20 @@ export default function TestEditor() {
             </div>
             <div className="space-y-4">
               <div className="bg-white/60 p-4 rounded-xl border border-blue-100">
-                <h3 className="text-sm font-bold text-blue-900 mb-2">Generate Full Test</h3>
+                <h3 className="text-sm font-bold text-blue-900 mb-2">Generate Diagnostic Test</h3>
                 <p className="text-xs text-blue-700 mb-3 leading-relaxed">
-                  Generate 20 diagnostic questions for {level}.
+                  Generate a {fullGenCount}-question diagnostic for {level} in reliable 5-question batches.
                 </p>
+                <div className="mb-4">
+                  <label className="block text-xs font-bold text-blue-800 mb-1">Number of Questions</label>
+                  <select
+                    value={fullGenCount}
+                    onChange={e => setFullGenCount(Number(e.target.value))}
+                    className="w-full border-blue-200 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-2 text-sm bg-white"
+                  >
+                    {[10, 15, 20].map(n => <option key={n} value={n}>{n} Questions</option>)}
+                  </select>
+                </div>
                 <div className="mb-4">
                   <label className="block text-xs font-bold text-blue-800 mb-1">Custom Prompt / Context (Optional)</label>
                   <textarea 
@@ -270,7 +613,7 @@ export default function TestEditor() {
                   disabled={generating}
                   className="bg-blue-600 w-full text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition disabled:opacity-50 text-sm"
                 >
-                  {generating ? 'Generating (approx 15s)...' : 'Generate Full Test'}
+                  {generating ? generationStatus || 'Generating...' : 'Generate Test'}
                 </button>
               </div>
             </div>

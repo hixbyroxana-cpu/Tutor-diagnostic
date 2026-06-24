@@ -3,7 +3,44 @@ import { useParams, Link } from 'react-router-dom';
 import { db, doc, getDoc, updateDoc } from '../firebase';
 import { TestResult } from '../types';
 import { generateParentSummary } from '../services/gemini';
-import { ArrowLeft, RefreshCw, Mail, Target, AlertTriangle, CheckCircle2, Copy } from 'lucide-react';
+import { downloadDiagnosticReportPdf, downloadLearningPlanPdf } from '../lib/pdf';
+import { ArrowLeft, RefreshCw, Mail, Target, AlertTriangle, CheckCircle2, Copy, Download, FileText, CalendarDays } from 'lucide-react';
+
+function buildStructuredParentMessage(result: TestResult) {
+  const secureTopics = result.topicBreakdown.filter(topic => topic.status === 'secure');
+  const developingTopics = result.topicBreakdown.filter(topic => topic.status === 'developing');
+  const weakTopics = result.topicBreakdown.filter(topic => topic.status === 'weak');
+  const strengths = secureTopics.length
+    ? secureTopics.slice(0, 3).map(topic => `${topic.topic}: ${topic.percentage}% (${topic.correct}/${topic.total})`)
+    : developingTopics.length
+      ? developingTopics.slice(0, 3).map(topic => `${topic.topic}: developing at ${topic.percentage}% (${topic.correct}/${topic.total})`)
+      : ['Completed the diagnostic, giving a clear baseline for future lessons.'];
+  const areasToStrengthen = [...weakTopics, ...developingTopics].slice(0, 3);
+
+  return [
+    'Overview',
+    `${result.studentFirstName} has completed the ${result.testLevel} diagnostic. This gives a clear baseline for future lessons and helps identify where focused support will make the biggest difference.`,
+    '',
+    'Score Snapshot',
+    `${result.score}/${result.totalQuestions} correct (${result.percentage}%). This should be read as a diagnostic starting point, showing which skills are currently secure and which need more guided practice.`,
+    '',
+    'Strengths',
+    'The main positives from this diagnostic are:',
+    ...strengths.map(item => `- ${item}`),
+    '',
+    'Areas To Strengthen',
+    'These are the areas where focused teaching and practice should have the greatest impact:',
+    ...(areasToStrengthen.length
+      ? areasToStrengthen.map(topic => `- ${topic.topic}: ${topic.percentage}% (${topic.correct}/${topic.total}). This should be prioritised so the method becomes more confident and reliable.`)
+      : ['- No major weak areas were identified. Continue with extension and mixed practice.']),
+    '',
+    'Suggested Targets',
+    'The next targets should turn these gaps into practical lesson priorities:',
+    ...(result.suggestedTargets.length
+      ? result.suggestedTargets.map(target => `- ${target}`)
+      : ['- No major targets identified.']),
+  ].join('\n');
+}
 
 export default function ResultDetail() {
   const { id } = useParams();
@@ -51,8 +88,8 @@ export default function ResultDetail() {
   };
 
   const copySummary = () => {
-    if (result?.parentSummary) {
-      navigator.clipboard.writeText(result.parentSummary);
+    if (result) {
+      navigator.clipboard.writeText(buildStructuredParentMessage(result));
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -60,6 +97,28 @@ export default function ResultDetail() {
 
   if (loading) return <div className="animate-pulse p-8">Loading result...</div>;
   if (!result) return <div className="p-8">Result not found.</div>;
+
+  const secureTopics = result.topicBreakdown.filter(topic => topic.status === 'secure');
+  const developingTopics = result.topicBreakdown.filter(topic => topic.status === 'developing');
+  const weakTopics = result.topicBreakdown.filter(topic => topic.status === 'weak');
+  const strengths = secureTopics.length
+    ? secureTopics.slice(0, 3).map(topic => `${topic.topic}: ${topic.percentage}% (${topic.correct}/${topic.total})`)
+    : developingTopics.length
+      ? developingTopics.slice(0, 3).map(topic => `${topic.topic}: developing at ${topic.percentage}% (${topic.correct}/${topic.total})`)
+      : ['Completed the diagnostic, giving a clear baseline for future lessons.'];
+  const areasToStrengthen = [...weakTopics, ...developingTopics].slice(0, 3);
+  const reportTargets = result.suggestedTargets;
+  const priorityTargets = result.suggestedTargets.length
+    ? result.suggestedTargets
+    : ['Maintain fluency and confidence across the topics covered in this diagnostic.'];
+  const totalLessons = priorityTargets.length + 1;
+  const revisionForLesson = (index: number) => {
+    if (index === 0) {
+      return 'We will begin by revisiting the relevant basics from the diagnostic before introducing the lesson focus.';
+    }
+
+    return `We will briefly revisit Lesson ${index}'s focus (${priorityTargets[index - 1]}) so the previous skill supports the new topic.`;
+  };
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-24">
@@ -104,27 +163,95 @@ export default function ResultDetail() {
             )}
           </div>
 
+          <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-3">
+            <h3 className="font-semibold text-slate-900 border-b pb-2">Downloads</h3>
+            <button
+              onClick={() => downloadDiagnosticReportPdf(result)}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-3 rounded-lg flex justify-center items-center gap-2 text-sm font-medium transition"
+            >
+              <FileText className="w-4 h-4" />
+              Download Report PDF
+              <Download className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => downloadLearningPlanPdf(result)}
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white py-2.5 px-3 rounded-lg flex justify-center items-center gap-2 text-sm font-medium transition"
+            >
+              <CalendarDays className="w-4 h-4" />
+              Download Learning Plan PDF
+              <Download className="w-4 h-4" />
+            </button>
+          </div>
+
           <div className="bg-slate-900 text-white rounded-xl p-6 shadow-sm space-y-4 relative">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold flex items-center gap-2">
                 <Mail className="w-4 h-4 text-blue-400" />
-                Parent Summary
+                Structured Report Draft
               </h3>
               <button 
                 onClick={() => generateSummary(result)} 
                 disabled={generatingSummary}
                 className="text-slate-400 hover:text-white transition"
-                title="Regenerate Summary"
+                title="Regenerate Structured Report"
               >
                 <RefreshCw className={`w-4 h-4 ${generatingSummary ? 'animate-spin' : ''}`} />
               </button>
             </div>
             {generatingSummary ? (
-              <div className="text-sm text-slate-400 animate-pulse">Drafting summary with AI...</div>
+              <div className="text-sm text-slate-400 animate-pulse">Drafting structured report with AI...</div>
             ) : (
               <>
-                <div className="text-sm leading-relaxed text-slate-300 whitespace-pre-wrap">
-                  {result.parentSummary}
+                <div className="space-y-5 text-sm leading-relaxed text-slate-300">
+                  <section>
+                    <h4 className="text-white font-semibold mb-1">Overview</h4>
+                    <p>
+                      {result.studentFirstName} has completed the {result.testLevel} diagnostic. This gives a clear baseline for future lessons and helps identify where focused support will make the biggest difference.
+                    </p>
+                  </section>
+
+                  <section>
+                    <h4 className="text-white font-semibold mb-1">Score Snapshot</h4>
+                    <p>
+                      {result.score}/{result.totalQuestions} correct ({result.percentage}%). This should be read as a diagnostic starting point, showing which skills are currently secure and which need more guided practice.
+                    </p>
+                  </section>
+
+                  <section>
+                    <h4 className="text-white font-semibold mb-1">Strengths</h4>
+                    <p className="mb-2">The main positives from this diagnostic are:</p>
+                    <ul className="list-disc pl-5 space-y-1">
+                      {strengths.map((item, index) => <li key={index}>{item}</li>)}
+                    </ul>
+                  </section>
+
+                  <section>
+                    <h4 className="text-white font-semibold mb-1">Areas To Strengthen</h4>
+                    <p className="mb-2">These are the areas where focused teaching and practice should have the greatest impact:</p>
+                    {areasToStrengthen.length ? (
+                      <ul className="list-disc pl-5 space-y-1">
+                        {areasToStrengthen.map(topic => (
+                          <li key={topic.topic}>
+                            {topic.topic}: {topic.percentage}% ({topic.correct}/{topic.total}). This should be prioritised so the method becomes more confident and reliable.
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p>No major weak areas were identified. Continue with extension and mixed practice.</p>
+                    )}
+                  </section>
+
+                  <section>
+                    <h4 className="text-white font-semibold mb-1">Suggested Targets</h4>
+                    <p className="mb-2">The next targets should turn these gaps into practical lesson priorities:</p>
+                    {reportTargets.length ? (
+                      <ul className="list-disc pl-5 space-y-1">
+                        {reportTargets.map((target, index) => <li key={index}>{target}</li>)}
+                      </ul>
+                    ) : (
+                      <p>No major targets identified.</p>
+                    )}
+                  </section>
                 </div>
                 <button 
                   onClick={copySummary}
@@ -135,6 +262,51 @@ export default function ResultDetail() {
                 </button>
               </>
             )}
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-5">
+            <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+              <CalendarDays className="w-4 h-4 text-blue-500" />
+              Learning Plan Preview
+            </h3>
+
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-sm text-blue-900">
+              Suggested duration: <strong>{totalLessons} lessons</strong>. Each target becomes a lesson focus, with revision built in before each new topic and a final reassessment lesson at the end.
+            </div>
+
+            <section className="space-y-4">
+              <h4 className="text-sm font-semibold text-slate-800">Lesson Sequence</h4>
+              {priorityTargets.map((target, index) => (
+                <div key={index} className="border border-slate-200 rounded-lg p-3 space-y-2">
+                  <h5 className="text-sm font-semibold text-slate-900">Lesson {index + 1}: {target}</h5>
+                  <p className="text-sm text-slate-600">
+                    <span className="text-sm font-semibold text-slate-900">Revision:</span> {revisionForLesson(index)}
+                  </p>
+                  <p className="text-sm text-slate-600">
+                    <span className="text-sm font-semibold text-slate-900">Focus:</span> In this lesson we will work on this target through clear examples, guided practice, and a few independent questions: {target}
+                  </p>
+                </div>
+              ))}
+            </section>
+
+            <section className="space-y-2">
+              <h4 className="text-sm font-semibold text-slate-800">Lesson {totalLessons}: Reassessment and Next Steps</h4>
+              <p className="text-sm text-slate-600">
+                <span className="text-sm font-semibold text-slate-900">Revision:</span> We will revisit the main targets from the plan and look back at the skills that needed the most support.
+              </p>
+              <p className="text-sm text-slate-600">
+                <span className="text-sm font-semibold text-slate-900">Focus:</span> The student will complete another test or short diagnostic. We will compare it with the original result to identify remaining gaps, newly secure skills, and any new areas for improvement.
+              </p>
+            </section>
+
+            <section className="space-y-2">
+              <h4 className="text-sm font-semibold text-slate-800">Follow-Up Actions</h4>
+              <ul className="list-disc pl-5 space-y-1 text-sm text-slate-700">
+                <li>Each lesson includes a short revision section before the new focus.</li>
+                <li>The parent can use the lesson titles to see which targets are being covered.</li>
+                <li>The last lesson uses another test or targeted reassessment to decide the next priorities.</li>
+              </ul>
+            </section>
           </div>
         </div>
 
@@ -176,7 +348,7 @@ export default function ResultDetail() {
                   <p className="text-sm text-slate-500">No major targets identified.</p>
                 ) : (
                   <ul className="space-y-2">
-                    {result.suggestedTargets.slice(0, 5).map((t, i) => (
+                    {result.suggestedTargets.map((t, i) => (
                       <li key={i} className="text-sm text-slate-700 flex items-start gap-2 bg-blue-50 p-2 rounded-md border border-blue-100">
                         <ArrowRight className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
                         <span>{t}</span>

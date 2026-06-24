@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import { db, collection, getDocs, query, where, addDoc } from '../firebase';
 import { Test, Question } from '../types';
@@ -19,9 +19,7 @@ export default function PublicTestRunner() {
   // Form State
   const [studentFirstName, setStudentFirstName] = useState('');
   const [studentLastName, setStudentLastName] = useState('');
-  const [parentName, setParentName] = useState('');
   const [parentEmail, setParentEmail] = useState('');
-  const [notes, setNotes] = useState('');
 
   // Answers State: question id -> selected choice
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -46,7 +44,7 @@ export default function PublicTestRunner() {
     loadTest();
   }, [slug]);
 
-  const handleStart = (e: React.FormEvent) => {
+  const handleStart = (e: FormEvent) => {
     e.preventDefault();
     setStage('testing');
     window.scrollTo(0, 0);
@@ -73,9 +71,9 @@ export default function PublicTestRunner() {
       const resultData = calculateTestResults(test, answers, {
         studentFirstName,
         studentLastName,
-        parentName,
+        parentName: '',
         parentEmail,
-        notes
+        notes: ''
       });
 
       const finalResult = {
@@ -122,7 +120,7 @@ export default function PublicTestRunner() {
                 Welcome to your Maths diagnostic test! Please answer all questions by selecting the single best option. 
                 There is no strict time limit, but we recommend taking around <strong>30-45 minutes</strong> to complete the test.
                 <br /><br />
-                Please enter your details below to begin. Good luck!
+                Enter the student details below to begin. Good luck!
               </div>
               
               <form onSubmit={handleStart} className="space-y-5">
@@ -138,18 +136,8 @@ export default function PublicTestRunner() {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Parent/Guardian Name *</label>
-                  <input required type="text" value={parentName} onChange={e => setParentName(e.target.value)} className="w-full border-slate-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-3" />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Parent/Guardian Email *</label>
-                  <input required type="email" value={parentEmail} onChange={e => setParentEmail(e.target.value)} className="w-full border-slate-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-3" />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Optional Notes</label>
-                  <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="w-full border-slate-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-3 text-sm" placeholder="Anything I should know before the test?" />
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Parent/Guardian Email (optional)</label>
+                  <input type="email" value={parentEmail} onChange={e => setParentEmail(e.target.value)} className="w-full border-slate-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-3" />
                 </div>
 
                 <div className="pt-6">
