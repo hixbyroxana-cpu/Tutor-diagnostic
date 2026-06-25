@@ -1,5 +1,5 @@
 export function belongsToTutor(record: { ownerId?: string }, uid: string): boolean {
-  return record.ownerId === uid;
+  return Boolean(uid && record.ownerId === uid);
 }
 
 export function makeTutorSlug(title: string, uid: string): string {

@@ -13,6 +13,10 @@ describe('belongsToTutor', () => {
   it('returns false when the owner is absent', () => {
     expect(belongsToTutor({}, 'tutor-a')).toBe(false);
   });
+
+  it('returns false when both uid and owner are empty', () => {
+    expect(belongsToTutor({ ownerId: '' }, '')).toBe(false);
+  });
 });
 
 describe('makeTutorSlug', () => {
