@@ -1,9 +1,13 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, FileText, CheckSquare } from 'lucide-react';
+import { LogOut } from 'lucide-react';
+import { useAuth } from '../auth/AuthProvider';
+import { auth, signOut } from '../firebase';
 import { cn } from '../lib/utils';
 
 export function AdminLayout() {
   const location = useLocation();
+  const { user } = useAuth();
+  const authRequired = import.meta.env.VITE_AUTH_REQUIRED === 'true';
 
   const navItems = [
     { name: 'Dashboard', path: '/dashboard' },
@@ -43,10 +47,32 @@ export function AdminLayout() {
             );
           })}
         </div>
-        <div className="hidden sm:flex items-center gap-2">
-          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-          <span className="text-xs text-slate-500 font-medium uppercase tracking-wider">Live</span>
-        </div>
+        {user ? (
+          <div className="hidden sm:flex items-center gap-2 min-w-0">
+            <span
+              className="max-w-40 truncate text-xs font-medium text-slate-600"
+              title={user.displayName || user.email || 'Tutor account'}
+            >
+              {user.displayName || user.email || 'Tutor account'}
+            </span>
+            <button
+              type="button"
+              onClick={() => void signOut(auth)}
+              className="w-9 h-9 shrink-0 rounded-lg inline-flex items-center justify-center text-slate-500 transition hover:bg-slate-100 hover:text-[#126b73]"
+              aria-label="Sign out"
+              title="Sign out"
+            >
+              <LogOut className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </div>
+        ) : (
+          <div className="hidden sm:flex items-center gap-2">
+            <div className="w-2 h-2 bg-green-500 rounded-full" />
+            <span className="text-xs text-slate-500 font-medium uppercase tracking-wider">
+              {authRequired ? 'Account required' : 'Compatibility mode'}
+            </span>
+          </div>
+        )}
       </nav>
 
       {/* Main Content */}
