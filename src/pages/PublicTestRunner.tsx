@@ -1,14 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import { db, collection, getDocs, query, where, addDoc } from '../firebase';
-import { Test, Question } from '../types';
+import { LegacyTest, LegacyTestResult, Question } from '../types';
 import { calculateTestResults } from '../lib/marking';
 
 import QuestionVisualizer from '../components/QuestionVisualizer';
 
 export default function PublicTestRunner() {
   const { slug } = useParams();
-  const [test, setTest] = useState<Test | null>(null);
+  const [test, setTest] = useState<LegacyTest | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
@@ -32,7 +32,7 @@ export default function PublicTestRunner() {
         if (snap.empty) {
           setError('Test not found or no longer active.');
         } else {
-          setTest({ id: snap.docs[0].id, ...snap.docs[0].data() } as Test);
+          setTest({ id: snap.docs[0].id, ...snap.docs[0].data() } as LegacyTest);
         }
       } catch (err) {
         console.error(err);
@@ -76,7 +76,7 @@ export default function PublicTestRunner() {
         notes: ''
       });
 
-      const finalResult = {
+      const finalResult: LegacyTestResult = {
         ...resultData,
         completedAt: Date.now(),
         isNew: true,

@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FileText, Users, Clock, ArrowRight, ExternalLink, Copy, Edit } from 'lucide-react';
 import { db, collection, getDocs, query, orderBy, limit } from '../firebase';
-import { Test, TestResult } from '../types';
+import { LegacyTest, LegacyTestResult } from '../types';
 import { cn, getLevelColor } from '../lib/utils';
 
 export default function Dashboard() {
-  const [tests, setTests] = useState<Test[]>([]);
-  const [results, setResults] = useState<TestResult[]>([]);
+  const [tests, setTests] = useState<LegacyTest[]>([]);
+  const [results, setResults] = useState<LegacyTestResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
 
@@ -16,11 +16,11 @@ export default function Dashboard() {
       try {
         const testsQ = query(collection(db, 'tests'), orderBy('createdAt', 'desc'), limit(5));
         const testsSnap = await getDocs(testsQ);
-        const testsData = testsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Test));
+        const testsData = testsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as LegacyTest));
 
         const resQ = query(collection(db, 'testResults'), orderBy('completedAt', 'desc'), limit(10));
         const resSnap = await getDocs(resQ);
-        const resData = resSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as TestResult));
+        const resData = resSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as LegacyTestResult));
 
         setTests(testsData);
         setResults(resData);

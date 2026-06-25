@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import type { Question, TestLevel, TestResult } from '../src/types';
+import type { LegacyTestResult, Question, TestLevel } from '../src/types';
 
 let ai: GoogleGenAI | null = null;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
@@ -194,7 +194,7 @@ Exactly 4 string choices per question. Never output fewer or more than 4 choices
   return normalizeGeneratedQuestions(JSON.parse(response.text));
 }
 
-export async function generateParentSummaryOnServer(result: TestResult): Promise<string> {
+export async function generateParentSummaryOnServer(result: LegacyTestResult): Promise<string> {
   const breakdownStr = result.topicBreakdown
     .map(t => `- ${t.topic}: ${t.percentage}% (${t.status})`)
     .join('\n');

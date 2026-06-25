@@ -51,6 +51,14 @@ export interface Test extends OwnedRecord {
   templateSourceId?: string;
 }
 
+export type LegacyTest = Omit<Test, 'ownerId'> & {
+  ownerId?: string;
+};
+
+export type TestDraft = Omit<LegacyTest, 'id' | 'createdAt'> & {
+  createdAt?: number;
+};
+
 export interface QuestionResult {
   questionId: string;
   question: string;
@@ -96,6 +104,14 @@ export interface TestResult extends OwnedRecord {
   notificationSentAt?: number;
   notificationError?: string;
 }
+
+export type LegacyTestResult = Omit<TestResult, 'ownerId' | 'submissionId' | 'notificationStatus'> & {
+  ownerId?: string;
+  submissionId?: string;
+  notificationStatus?: NotificationStatus;
+};
+
+export type TestResultDraft = Omit<LegacyTestResult, 'id' | 'isNew' | 'completedAt'>;
 
 export interface TutorProfile {
   uid: string;

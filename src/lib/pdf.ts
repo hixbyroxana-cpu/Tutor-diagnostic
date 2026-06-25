@@ -1,4 +1,4 @@
-import { TestResult } from '../types';
+import { LegacyTestResult } from '../types';
 
 type PdfLine = {
   text: string;
@@ -180,7 +180,7 @@ function downloadPdfFromPages(filename: string, pages: string[][]) {
   URL.revokeObjectURL(url);
 }
 
-function metadata(result: TestResult): PdfLine[] {
+function metadata(result: LegacyTestResult): PdfLine[] {
   return [
     { text: result.studentFullName, size: 20, bold: true, gapAfter: 4 },
     { text: `${result.testTitle} (${result.testLevel})`, size: 12, gapAfter: 4 },
@@ -195,7 +195,7 @@ function statusLabel(status: string) {
   return 'Needs support';
 }
 
-function reportOverview(result: TestResult) {
+function reportOverview(result: LegacyTestResult) {
   if (result.percentage >= 80) {
     return `${result.studentFirstName} has shown secure understanding across much of this diagnostic. The result gives a useful snapshot of what is already working well and where we can now extend fluency, confidence, and problem-solving depth.`;
   }
@@ -207,11 +207,11 @@ function reportOverview(result: TestResult) {
   return `${result.studentFirstName} has completed the diagnostic, giving us a clear starting point for future lessons. This result should be seen as a baseline, helping us plan support carefully rather than as a final judgement of ability.`;
 }
 
-function scoreSnapshot(result: TestResult) {
+function scoreSnapshot(result: LegacyTestResult) {
   return `${result.score}/${result.totalQuestions} correct (${result.percentage}%). This shows which skills are currently secure and which topics need more guided practice before the next stage of learning.`;
 }
 
-function strongestTopics(result: TestResult) {
+function strongestTopics(result: LegacyTestResult) {
   const secure = result.topicBreakdown.filter(topic => topic.status === 'secure');
   const developing = result.topicBreakdown.filter(topic => topic.status === 'developing');
 
@@ -226,7 +226,7 @@ function strongestTopics(result: TestResult) {
   return ['Completing the diagnostic provides a useful baseline and identifies exactly where support should begin.'];
 }
 
-function focusTopics(result: TestResult) {
+function focusTopics(result: LegacyTestResult) {
   const weak = result.topicBreakdown.filter(topic => topic.status === 'weak');
   const developing = result.topicBreakdown.filter(topic => topic.status === 'developing');
   const topics = [...weak, ...developing];
@@ -329,7 +329,7 @@ function drawCompactMetric(commands: string[], label: string, value: string, x: 
   drawText(commands, value, x + 12, y - 31, { size: 13, bold: true, color: '#172033' });
 }
 
-function drawTopicPerformance(commands: string[], result: TestResult, x: number, y: number, width: number, height: number) {
+function drawTopicPerformance(commands: string[], result: LegacyTestResult, x: number, y: number, width: number, height: number) {
   fillRect(commands, x, y - height, width, height, '#f4f8f8');
   strokeRect(commands, x, y - height, width, height, '#dce7e7');
   drawText(commands, 'Topic performance', x + 12, y - 20, { size: 10, bold: true, color: '#172033' });
@@ -353,7 +353,7 @@ function drawTopicPerformance(commands: string[], result: TestResult, x: number,
   });
 }
 
-function drawMiniDonut(commands: string[], result: TestResult, cx: number, cy: number) {
+function drawMiniDonut(commands: string[], result: LegacyTestResult, cx: number, cy: number) {
   const secure = result.topicBreakdown.filter(topic => topic.status === 'secure').length;
   const developing = result.topicBreakdown.filter(topic => topic.status === 'developing').length;
   const weak = result.topicBreakdown.filter(topic => topic.status === 'weak').length;
@@ -415,7 +415,7 @@ function dashboardFooter(commands: string[], pageNumber: number) {
   drawText(commands, `Page ${pageNumber}`, PAGE_WIDTH - 72, 28, { size: 8, color: '#64748b' });
 }
 
-function buildDiagnosticReportDashboardPdf(result: TestResult) {
+function buildDiagnosticReportDashboardPdf(result: LegacyTestResult) {
   const pages: string[][] = [[]];
   const page = pages[0];
   const strengths = strongestTopics(result).slice(0, 3);
@@ -469,14 +469,14 @@ function buildDiagnosticReportDashboardPdf(result: TestResult) {
   return pages;
 }
 
-export function downloadDiagnosticReportPdf(result: TestResult) {
+export function downloadDiagnosticReportPdf(result: LegacyTestResult) {
   downloadPdfFromPages(
     `${cleanFilename(result.studentFullName)}-diagnostic-report.pdf`,
     buildDiagnosticReportDashboardPdf(result)
   );
 }
 
-function drawLearningHeader(commands: string[], result: TestResult, title: string, subtitle: string) {
+function drawLearningHeader(commands: string[], result: LegacyTestResult, title: string, subtitle: string) {
   fillRect(commands, 24, 24, PAGE_WIDTH - 48, PAGE_HEIGHT - 48, '#fbfcfd');
   strokeRect(commands, 24, 24, PAGE_WIDTH - 48, PAGE_HEIGHT - 48, '#d8dee6', 1.2);
   fillRect(commands, 24, PAGE_HEIGHT - 136, PAGE_WIDTH - 48, 112, '#173d62');
@@ -505,7 +505,7 @@ function drawLessonCard(commands: string[], lessonNumber: number, title: string,
   return y - height - 14;
 }
 
-function buildLearningPlanDashboardPdf(result: TestResult) {
+function buildLearningPlanDashboardPdf(result: LegacyTestResult) {
   const priorityTargets = result.suggestedTargets.length
     ? result.suggestedTargets
     : ['Maintain fluency and confidence across the topics covered in this diagnostic.'];
@@ -574,7 +574,7 @@ function buildLearningPlanDashboardPdf(result: TestResult) {
   return pages;
 }
 
-export function downloadLearningPlanPdf(result: TestResult) {
+export function downloadLearningPlanPdf(result: LegacyTestResult) {
   downloadPdfFromPages(
     `${cleanFilename(result.studentFullName)}-learning-plan.pdf`,
     buildLearningPlanDashboardPdf(result)

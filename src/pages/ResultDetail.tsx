@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { db, doc, getDoc, updateDoc } from '../firebase';
-import { TestResult } from '../types';
+import { LegacyTestResult } from '../types';
 import { generateParentSummary } from '../services/gemini';
 import { downloadDiagnosticReportPdf, downloadLearningPlanPdf } from '../lib/pdf';
 import { ArrowLeft, RefreshCw, Mail, Target, AlertTriangle, CheckCircle2, Copy, Download, FileText, CalendarDays } from 'lucide-react';
 
-function buildStructuredParentMessage(result: TestResult) {
+function buildStructuredParentMessage(result: LegacyTestResult) {
   const secureTopics = result.topicBreakdown.filter(topic => topic.status === 'secure');
   const developingTopics = result.topicBreakdown.filter(topic => topic.status === 'developing');
   const weakTopics = result.topicBreakdown.filter(topic => topic.status === 'weak');
@@ -44,7 +44,7 @@ function buildStructuredParentMessage(result: TestResult) {
 
 export default function ResultDetail() {
   const { id } = useParams();
-  const [result, setResult] = useState<TestResult | null>(null);
+  const [result, setResult] = useState<LegacyTestResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [generatingSummary, setGeneratingSummary] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -55,7 +55,7 @@ export default function ResultDetail() {
       try {
         const snap = await getDoc(doc(db, 'testResults', id));
         if (snap.exists()) {
-          const data = snap.data() as TestResult;
+          const data = snap.data() as LegacyTestResult;
           setResult(data);
           
           // Auto-generate parent summary if it doesn't exist
@@ -72,7 +72,7 @@ export default function ResultDetail() {
     loadResult();
   }, [id]);
 
-  const generateSummary = async (data: TestResult) => {
+  const generateSummary = async (data: LegacyTestResult) => {
     if (!id) return;
     setGeneratingSummary(true);
     try {

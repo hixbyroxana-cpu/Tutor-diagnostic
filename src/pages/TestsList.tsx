@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Search, Copy, Check, Edit, Trash2 } from 'lucide-react';
 import { db, collection, getDocs, query, orderBy, doc, updateDoc } from '../firebase';
-import { Test } from '../types';
+import { LegacyTest } from '../types';
 import { cn, getLevelColor } from '../lib/utils';
 
 export default function TestsList() {
-  const [tests, setTests] = useState<Test[]>([]);
+  const [tests, setTests] = useState<LegacyTest[]>([]);
   const [loading, setLoading] = useState(true);
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
 
@@ -15,7 +15,7 @@ export default function TestsList() {
       try {
         const q = query(collection(db, 'tests'), orderBy('createdAt', 'desc'));
         const snap = await getDocs(q);
-        setTests(snap.docs.map(d => ({ id: d.id, ...d.data() } as Test)));
+        setTests(snap.docs.map(d => ({ id: d.id, ...d.data() } as LegacyTest)));
       } catch (err) {
         console.error(err);
       } finally {

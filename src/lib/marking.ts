@@ -1,6 +1,6 @@
-import { TestResult, TopicBreakdown } from '../types';
+import { TestResultDraft, TopicBreakdown } from '../types';
 
-export function calculateTestResults(test: any, answers: Record<string, string>, studentInfo: any): Omit<TestResult, 'id' | 'isNew' | 'completedAt' | 'ownerId' | 'submissionId' | 'notificationStatus'> {
+export function calculateTestResults(test: any, answers: Record<string, string>, studentInfo: any): TestResultDraft {
   let score = 0;
   const questionResults = test.questions.map((q: any) => {
     const selected = answers[q.id] || "";

@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Filter, Eye } from 'lucide-react';
 import { db, collection, getDocs, query, orderBy } from '../firebase';
-import { TestResult } from '../types';
+import { LegacyTestResult } from '../types';
 
 export default function ResultsList() {
-  const [results, setResults] = useState<TestResult[]>([]);
+  const [results, setResults] = useState<LegacyTestResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterLevel, setFilterLevel] = useState<string>('All');
   const [search, setSearch] = useState('');
@@ -15,7 +15,7 @@ export default function ResultsList() {
       try {
         const q = query(collection(db, 'testResults'), orderBy('completedAt', 'desc'));
         const snap = await getDocs(q);
-        setResults(snap.docs.map(d => ({ id: d.id, ...d.data() } as TestResult)));
+        setResults(snap.docs.map(d => ({ id: d.id, ...d.data() } as LegacyTestResult)));
       } catch (err) {
         console.error(err);
       } finally {
