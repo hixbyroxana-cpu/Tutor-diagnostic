@@ -1,7 +1,12 @@
 export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
 export type TestLevel = 'Year 2' | 'Year 3' | 'Year 4' | 'Year 5' | 'Year 6' | '11+' | 'KS3' | 'GCSE Foundation' | 'GCSE Higher' | 'A-Level' | 'Adult';
+export type NotificationStatus = 'pending' | 'sent' | 'failed';
 
 export type VisualAspectType = 'none' | 'bar_chart' | 'pie_chart' | 'coordinate_grid' | 'l_shape';
+
+export interface OwnedRecord {
+  ownerId: string;
+}
 
 export interface VisualData {
   data?: { name: string; value: number }[]; // For pie/bar
@@ -32,7 +37,7 @@ export interface Question {
   visualData?: VisualData;
 }
 
-export interface Test {
+export interface Test extends OwnedRecord {
   id?: string; // firestore id
   title: string;
   level: TestLevel;
@@ -43,6 +48,7 @@ export interface Test {
   createdAt: number;
   updatedAt: number;
   isActive: boolean;
+  templateSourceId?: string;
 }
 
 export interface QuestionResult {
@@ -63,7 +69,7 @@ export interface TopicBreakdown {
   status: 'weak' | 'developing' | 'secure'; // <60% | 60-79% | >=80%
 }
 
-export interface TestResult {
+export interface TestResult extends OwnedRecord {
   id?: string;
   testId: string;
   testSlug: string;
@@ -85,4 +91,16 @@ export interface TestResult {
   parentSummary: string;
   isNew: boolean;
   completedAt: number;
+  submissionId: string;
+  notificationStatus: NotificationStatus;
+  notificationSentAt?: number;
+  notificationError?: string;
+}
+
+export interface TutorProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  createdAt: number;
+  templatesProvisionedAt?: number;
 }
