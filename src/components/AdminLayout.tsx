@@ -23,12 +23,12 @@ export function AdminLayout() {
           <div className="w-9 h-9 bg-[#126b73] rounded-lg flex items-center justify-center text-white font-bold shadow-sm">
             Σ
           </div>
-          <div>
+          <div className="hidden md:block">
             <h1 className="text-lg font-bold tracking-tight text-[#172033]">Tutor Diagnostic</h1>
             <p className="hidden sm:block text-[10px] uppercase tracking-[0.18em] text-[#126b73] font-bold">Maths progress reports</p>
           </div>
         </div>
-        <div className="flex gap-4 md:gap-6 text-sm font-medium text-slate-600">
+        <div className="flex gap-2 sm:gap-4 md:gap-6 text-sm font-medium text-slate-600">
           {navItems.map((item) => {
             const isActive = location.pathname.startsWith(item.path);
             return (
@@ -48,9 +48,9 @@ export function AdminLayout() {
           })}
         </div>
         {user ? (
-          <div className="hidden sm:flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
             <span
-              className="max-w-40 truncate text-xs font-medium text-slate-600"
+              className="hidden md:block max-w-40 truncate text-xs font-medium text-slate-600"
               title={user.displayName || user.email || 'Tutor account'}
             >
               {user.displayName || user.email || 'Tutor account'}

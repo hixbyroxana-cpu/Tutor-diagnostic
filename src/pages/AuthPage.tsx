@@ -3,12 +3,14 @@ import type { UserCredential } from 'firebase/auth';
 import { Chrome, LoaderCircle, LockKeyhole, LogIn, Mail, UserPlus } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { friendlyAuthError } from '../auth/auth-errors';
+import { acceptsBootstrapStatus } from '../auth/bootstrap-response';
 import {
   auth,
   createUserWithEmailAndPassword,
   googleProvider,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signOut,
 } from '../firebase';
 import { cn } from '../lib/utils';
 
@@ -36,11 +38,7 @@ async function bootstrapAccount(credential: UserCredential) {
     },
   });
 
-  if (response.status === 404) {
-    return;
-  }
-
-  if (!response.ok) {
+  if (!acceptsBootstrapStatus(response.status)) {
     throw new Error('We could not finish setting up your account. Please try again.');
   }
 }
@@ -60,7 +58,18 @@ export default function AuthPage() {
     : '/dashboard';
 
   async function finishAuthentication(credential: UserCredential) {
-    await bootstrapAccount(credential);
+    try {
+      await bootstrapAccount(credential);
+    } catch (bootstrapError) {
+      try {
+        await signOut(auth);
+      } catch {
+        // Preserve the bootstrap error even when Firebase sign-out also fails.
+      }
+
+      throw bootstrapError;
+    }
+
     navigate(returnTo, { replace: true });
   }
 
@@ -112,7 +121,7 @@ export default function AuthPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-1 mb-6" role="tablist" aria-label="Account mode">
+        <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-1 mb-6" role="group" aria-label="Account mode">
           {([
             { value: 'sign-in' as const, label: 'Sign in' },
             { value: 'register' as const, label: 'Register' },
@@ -120,8 +129,7 @@ export default function AuthPage() {
             <button
               key={option.value}
               type="button"
-              role="tab"
-              aria-selected={mode === option.value}
+              aria-pressed={mode === option.value}
               className={cn(
                 'min-h-10 rounded-md px-3 text-sm font-semibold transition-colors',
                 mode === option.value
