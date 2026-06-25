@@ -4,7 +4,7 @@ import { Save, Sparkles, Trash2, Plus, GripVertical, ChevronDown, ChevronRight, 
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { db, doc, getDoc, collection, addDoc, updateDoc } from '../firebase';
-import { LegacyTest, TestDraft, TestLevel, Question, QuestionDifficulty, VisualAspectType } from '../types';
+import { LegacyTest, TestCreatePayload, TestUpdatePayload, TestLevel, Question, QuestionDifficulty, VisualAspectType } from '../types';
 import { generateSpecificQuestions } from '../services/gemini';
 import QuestionVisualizer from '../components/QuestionVisualizer';
 
@@ -413,22 +413,25 @@ export default function TestEditor() {
     setSaving(true);
     setError('');
     try {
-      const p: TestDraft = {
+      const updatePayload: TestUpdatePayload = {
         title: title.trim(),
         level,
         slug,
         description,
         aiPrompt,
         questions: finalQuestions,
-        createdAt: id ? undefined : Date.now(),
         updatedAt: Date.now(),
         isActive: true,
       };
 
       if (id) {
-        await updateDoc(doc(db, 'tests', id), p as any);
+        await updateDoc(doc(db, 'tests', id), updatePayload);
       } else {
-        await addDoc(collection(db, 'tests'), p);
+        const createPayload: TestCreatePayload = {
+          ...updatePayload,
+          createdAt: Date.now(),
+        };
+        await addDoc(collection(db, 'tests'), createPayload);
       }
       navigate('/tests');
     } catch (err: any) {

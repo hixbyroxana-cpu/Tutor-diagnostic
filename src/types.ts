@@ -55,9 +55,9 @@ export type LegacyTest = Omit<Test, 'ownerId'> & {
   ownerId?: string;
 };
 
-export type TestDraft = Omit<LegacyTest, 'id' | 'createdAt'> & {
-  createdAt?: number;
-};
+export type TestCreatePayload = Omit<LegacyTest, 'id'>;
+
+export type TestUpdatePayload = Omit<TestCreatePayload, 'createdAt'>;
 
 export interface QuestionResult {
   questionId: string;
@@ -111,7 +111,17 @@ export type LegacyTestResult = Omit<TestResult, 'ownerId' | 'submissionId' | 'no
   notificationStatus?: NotificationStatus;
 };
 
-export type TestResultDraft = Omit<LegacyTestResult, 'id' | 'isNew' | 'completedAt'>;
+export type TestResultDraft = Omit<
+  TestResult,
+  | 'id'
+  | 'isNew'
+  | 'completedAt'
+  | 'ownerId'
+  | 'submissionId'
+  | 'notificationStatus'
+  | 'notificationSentAt'
+  | 'notificationError'
+>;
 
 export interface TutorProfile {
   uid: string;
