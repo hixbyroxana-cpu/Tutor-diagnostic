@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getPublicAppBaseUrl, shouldFilterByOwner } from './tutor-query';
+import { canEditOwnedRecord, getPublicAppBaseUrl, shouldFilterByOwner } from './tutor-query';
 
 describe('shouldFilterByOwner', () => {
   it('returns true only when auth is enforced and a uid is present', () => {
@@ -33,5 +33,22 @@ describe('getPublicAppBaseUrl', () => {
     expect(getPublicAppBaseUrl('https://diagnostic.click/', 'https://preview.vercel.app')).toBe(
       'https://diagnostic.click',
     );
+  });
+});
+
+describe('canEditOwnedRecord', () => {
+  it('requires a matching owner when auth is enforced', () => {
+    expect(canEditOwnedRecord('true', 'tutor-123', 'tutor-123')).toBe(true);
+    expect(canEditOwnedRecord('true', 'tutor-456', 'tutor-123')).toBe(false);
+  });
+
+  it('rejects enforced edits when uid or owner is missing', () => {
+    expect(canEditOwnedRecord('true', 'tutor-123', undefined)).toBe(false);
+    expect(canEditOwnedRecord('true', undefined, 'tutor-123')).toBe(false);
+  });
+
+  it('keeps compatibility mode permissive for legacy records', () => {
+    expect(canEditOwnedRecord('false', undefined, undefined)).toBe(true);
+    expect(canEditOwnedRecord(undefined, 'other-tutor', 'tutor-123')).toBe(true);
   });
 });

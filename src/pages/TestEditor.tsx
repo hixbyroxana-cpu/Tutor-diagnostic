@@ -9,7 +9,7 @@ import { generateSpecificQuestions } from '../services/gemini';
 import QuestionVisualizer from '../components/QuestionVisualizer';
 import { useAuth } from '../auth/AuthProvider';
 import { belongsToTutor } from '../lib/ownership';
-import { shouldFilterByOwner } from '../lib/tutor-query';
+import { canEditOwnedRecord, shouldFilterByOwner } from '../lib/tutor-query';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -210,6 +210,7 @@ export default function TestEditor() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
   const [accessDenied, setAccessDenied] = useState(false);
+  const [loadedOwnerId, setLoadedOwnerId] = useState<string | undefined>(undefined);
   
   const [title, setTitle] = useState('');
   const [titleManuallyEdited, setTitleManuallyEdited] = useState(false);
@@ -319,6 +320,7 @@ export default function TestEditor() {
           setDescription(data.description);
           setAiPrompt(data.aiPrompt || '');
           setQuestions(data.questions || []);
+          setLoadedOwnerId(data.ownerId);
         } else {
           setError('Test not found');
         }
@@ -430,6 +432,11 @@ export default function TestEditor() {
     
     if (authRequired === 'true' && !user?.uid) {
       setError('Authentication required.');
+      return;
+    }
+
+    if (id && !canEditOwnedRecord(authRequired, loadedOwnerId, user?.uid)) {
+      setError('You do not have access to save this test.');
       return;
     }
 
