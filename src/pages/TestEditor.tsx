@@ -296,6 +296,17 @@ export default function TestEditor() {
   }, [id, level, selectedChapter, titleManuallyEdited]);
 
   useEffect(() => {
+    setAccessDenied(false);
+    setError('');
+    setLoadedOwnerId(undefined);
+
+    if (!id) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+
     if (id) {
       if (authRequired === 'true' && !user?.uid) {
         setError('Authentication required.');
@@ -304,7 +315,6 @@ export default function TestEditor() {
         return;
       }
 
-      setLoading(true);
       getDoc(doc(db, 'tests', id)).then((snap) => {
         if (snap.exists()) {
           const data = snap.data() as LegacyTest;
@@ -321,6 +331,7 @@ export default function TestEditor() {
           setAiPrompt(data.aiPrompt || '');
           setQuestions(data.questions || []);
           setLoadedOwnerId(data.ownerId);
+          setAccessDenied(false);
         } else {
           setError('Test not found');
         }

@@ -58,7 +58,15 @@ export default function ResultDetail() {
 
   useEffect(() => {
     async function loadResult() {
-      if (!id) return;
+      setAccessDenied(false);
+      setResult(null);
+      setLoading(true);
+
+      if (!id) {
+        setLoading(false);
+        return;
+      }
+
       if (authRequired === 'true' && !user?.uid) {
         setAccessDenied(true);
         setLoading(false);
@@ -75,6 +83,7 @@ export default function ResultDetail() {
           }
 
           setResult(data);
+          setAccessDenied(false);
           
           // Auto-generate parent summary if it doesn't exist
           if (!data.parentSummary) {
