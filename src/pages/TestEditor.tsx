@@ -15,6 +15,13 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 const authRequired = import.meta.env.VITE_AUTH_REQUIRED;
 
+const isPermissionLikeError = (err: unknown) => {
+  const error = err as { code?: string; message?: string };
+  const message = error.message?.toLowerCase() || '';
+
+  return error.code === 'permission-denied' || message.includes('permission') || message.includes('missing or insufficient permissions');
+};
+
 const LEVELS: TestLevel[] = ['Year 2', 'Year 3', 'Year 4', 'Year 5', 'Year 6', '11+', 'KS3', 'GCSE Foundation', 'GCSE Higher', 'A-Level', 'Adult'];
 const OVERALL_REVISION = 'Overall revision';
 const DEFAULT_11_PLUS_CHAPTERS = [
@@ -296,18 +303,19 @@ export default function TestEditor() {
   }, [id, level, selectedChapter, titleManuallyEdited]);
 
   useEffect(() => {
-    setAccessDenied(false);
-    setError('');
-    setLoadedOwnerId(undefined);
+    let ignore = false;
 
-    if (!id) {
-      setLoading(false);
-      return;
-    }
+    async function loadTest() {
+      setAccessDenied(false);
+      setError('');
+      setLoadedOwnerId(undefined);
 
-    setLoading(true);
+      if (!id) {
+        setLoading(false);
+        return;
+      }
 
-    if (id) {
+      setLoading(true);
       if (authRequired === 'true' && !user?.uid) {
         setError('Authentication required.');
         setAccessDenied(true);
@@ -315,7 +323,10 @@ export default function TestEditor() {
         return;
       }
 
-      getDoc(doc(db, 'tests', id)).then((snap) => {
+      try {
+        const snap = await getDoc(doc(db, 'tests', id));
+        if (ignore) return;
+
         if (snap.exists()) {
           const data = snap.data() as LegacyTest;
           if (shouldFilterByOwner(authRequired, user?.uid) && !belongsToTutor(data, user!.uid)) {
@@ -335,9 +346,24 @@ export default function TestEditor() {
         } else {
           setError('Test not found');
         }
-        setLoading(false);
-      });
+      } catch (err: any) {
+        if (ignore) return;
+
+        console.error(err);
+        setError(err.message || 'Could not load test.');
+        if (authRequired === 'true' && isPermissionLikeError(err)) {
+          setAccessDenied(true);
+        }
+      } finally {
+        if (!ignore) setLoading(false);
+      }
     }
+
+    loadTest();
+
+    return () => {
+      ignore = true;
+    };
   }, [id, user?.uid]);
 
   const handleGenerateFull = async () => {

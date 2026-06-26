@@ -57,6 +57,8 @@ export default function ResultDetail() {
   const [accessDenied, setAccessDenied] = useState(false);
 
   useEffect(() => {
+    let ignore = false;
+
     async function loadResult() {
       setAccessDenied(false);
       setResult(null);
@@ -75,6 +77,8 @@ export default function ResultDetail() {
 
       try {
         const snap = await getDoc(doc(db, 'testResults', id));
+        if (ignore) return;
+
         if (snap.exists()) {
           const data = snap.data() as LegacyTestResult;
           if (shouldFilterByOwner(authRequired, user?.uid) && !belongsToTutor(data, user!.uid)) {
@@ -91,12 +95,17 @@ export default function ResultDetail() {
           }
         }
       } catch (err) {
+        if (ignore) return;
         console.error(err);
       } finally {
-        setLoading(false);
+        if (!ignore) setLoading(false);
       }
     }
     loadResult();
+
+    return () => {
+      ignore = true;
+    };
   }, [id, user?.uid]);
 
   const generateSummary = async (data: LegacyTestResult) => {

@@ -16,20 +16,30 @@ export default function ResultsList() {
   const [search, setSearch] = useState('');
 
   useEffect(() => {
+    let ignore = false;
+
     async function fetchResults() {
+      setLoading(true);
+
       try {
         const q = shouldFilterByOwner(authRequired, user?.uid)
           ? query(collection(db, 'testResults'), where('ownerId', '==', user!.uid), orderBy('completedAt', 'desc'))
           : query(collection(db, 'testResults'), orderBy('completedAt', 'desc'));
         const snap = await getDocs(q);
+        if (ignore) return;
         setResults(snap.docs.map(d => ({ id: d.id, ...d.data() } as LegacyTestResult)));
       } catch (err) {
+        if (ignore) return;
         console.error(err);
       } finally {
-        setLoading(false);
+        if (!ignore) setLoading(false);
       }
     }
     fetchResults();
+
+    return () => {
+      ignore = true;
+    };
   }, [user?.uid]);
 
   const levels = ['All', ...Array.from(new Set(results.map(r => r.testLevel)))];

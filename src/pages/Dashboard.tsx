@@ -17,7 +17,11 @@ export default function Dashboard() {
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
 
   useEffect(() => {
+    let ignore = false;
+
     async function loadData() {
+      setLoading(true);
+
       try {
         const filterByOwner = shouldFilterByOwner(authRequired, user?.uid);
         const testsQ = filterByOwner
@@ -32,15 +36,21 @@ export default function Dashboard() {
         const resSnap = await getDocs(resQ);
         const resData = resSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as LegacyTestResult));
 
+        if (ignore) return;
         setTests(testsData);
         setResults(resData);
       } catch (err) {
+        if (ignore) return;
         console.error("Failed to load dashboard data", err);
       } finally {
-        setLoading(false);
+        if (!ignore) setLoading(false);
       }
     }
     loadData();
+
+    return () => {
+      ignore = true;
+    };
   }, [user?.uid]);
 
   const copyLink = (slug: string) => {

@@ -16,20 +16,30 @@ export default function TestsList() {
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
 
   useEffect(() => {
+    let ignore = false;
+
     async function fetchTests() {
+      setLoading(true);
+
       try {
         const q = shouldFilterByOwner(authRequired, user?.uid)
           ? query(collection(db, 'tests'), where('ownerId', '==', user!.uid), orderBy('createdAt', 'desc'))
           : query(collection(db, 'tests'), orderBy('createdAt', 'desc'));
         const snap = await getDocs(q);
+        if (ignore) return;
         setTests(snap.docs.map(d => ({ id: d.id, ...d.data() } as LegacyTest)));
       } catch (err) {
+        if (ignore) return;
         console.error(err);
       } finally {
-        setLoading(false);
+        if (!ignore) setLoading(false);
       }
     }
     fetchTests();
+
+    return () => {
+      ignore = true;
+    };
   }, [user?.uid]);
 
   const copyLink = (slug: string) => {
