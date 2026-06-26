@@ -1,6 +1,7 @@
 import { getAdminDb } from '../_firebase-admin.js';
 import { handleApiError, HttpError, requireMethod, sendJson } from '../_http.js';
 import type { Question, Test } from '../../src/types.js';
+import { loadSingleActiveTestBySlug } from './active-test.js';
 
 function publicQuestion(question: Question) {
   const { correctAnswer, explanation, target, ...safeQuestion } = question;
@@ -35,19 +36,8 @@ export default async function handler(req: any, res: any) {
   try {
     const slug = slugFromQuery(req.query ?? {});
     const db = getAdminDb();
-    const snapshot = await db
-      .collection('tests')
-      .where('slug', '==', slug)
-      .where('isActive', '==', true)
-      .limit(1)
-      .get();
-
-    if (snapshot.empty) {
-      throw new HttpError(404, 'Test not found or no longer active.');
-    }
-
-    const doc = snapshot.docs[0];
-    sendJson(res, 200, buildPublicTestPayload({ ...doc.data(), id: doc.id } as Test));
+    const test = await loadSingleActiveTestBySlug(db, slug);
+    sendJson(res, 200, buildPublicTestPayload(test));
   } catch (error) {
     handleApiError(res, error, 'Failed to load public test.');
   }

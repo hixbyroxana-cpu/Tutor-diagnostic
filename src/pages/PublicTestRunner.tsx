@@ -175,11 +175,11 @@ export default function PublicTestRunner() {
                 <div className="grid grid-cols-2 gap-5">
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1">Student First Name *</label>
-                    <input required type="text" value={studentFirstName} onChange={e => setStudentFirstName(e.target.value)} className="w-full border-slate-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-3" />
+                    <input required maxLength={80} type="text" value={studentFirstName} onChange={e => setStudentFirstName(e.target.value)} className="w-full border-slate-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-3" />
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1">Student Last Name *</label>
-                    <input required type="text" value={studentLastName} onChange={e => setStudentLastName(e.target.value)} className="w-full border-slate-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-3" />
+                    <input required maxLength={80} type="text" value={studentLastName} onChange={e => setStudentLastName(e.target.value)} className="w-full border-slate-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-3" />
                   </div>
                 </div>
                 

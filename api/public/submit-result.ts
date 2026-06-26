@@ -1,7 +1,5 @@
 import { getAdminDb } from '../_firebase-admin.js';
 import { handleApiError, HttpError, requirePost, sendJson } from '../_http.js';
-import type { Test } from '../../src/types.js';
-import type { Firestore } from 'firebase-admin/firestore';
 import {
   assertSubmissionId,
   assertStudentInfo,
@@ -10,6 +8,7 @@ import {
   duplicateSubmissionResponse,
   normalizeAnswers,
 } from './submission-core.js';
+import { loadSingleActiveTestBySlug } from './active-test.js';
 
 function requestBody(req: any) {
   if (typeof req.body === 'string') {
@@ -53,22 +52,6 @@ export function duplicateResponseForExistingSubmission(
   return duplicateSubmissionResponse(resultId);
 }
 
-async function loadActiveTest(db: Firestore, slug: string) {
-  const snapshot = await db
-    .collection('tests')
-    .where('slug', '==', slug)
-    .where('isActive', '==', true)
-    .limit(1)
-    .get();
-
-  if (snapshot.empty) {
-    throw new HttpError(404, 'Test not found or no longer active.');
-  }
-
-  const doc = snapshot.docs[0];
-  return { ...doc.data(), id: doc.id } as Test;
-}
-
 function isAlreadyExistsError(error: unknown) {
   if (!error || typeof error !== 'object') return false;
   const code = (error as { code?: unknown }).code;
@@ -93,7 +76,7 @@ export default async function handler(req: any, res: any) {
 
     const studentInfo = assertStudentInfo(body.studentInfo);
     const answers = normalizeAnswers(body.answers);
-    const test = await loadActiveTest(db, slug);
+    const test = await loadSingleActiveTestBySlug(db, slug);
     const result = buildStoredResult(test, answers, studentInfo, submissionId, Date.now());
 
     try {
