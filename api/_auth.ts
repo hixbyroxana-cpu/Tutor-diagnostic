@@ -12,6 +12,12 @@ type RequestLike = {
 };
 
 const AUTH_REQUIRED_MESSAGE = 'Authentication required.';
+const SAFE_TOKEN_ERROR_CODES = new Set([
+  'auth/argument-error',
+  'auth/id-token-expired',
+  'auth/id-token-revoked',
+  'auth/invalid-id-token',
+]);
 
 function readHeader(headers: HeaderMap | HeadersLike | undefined, name: string) {
   if (!headers) return undefined;
@@ -28,6 +34,13 @@ function readHeader(headers: HeaderMap | HeadersLike | undefined, name: string) 
 function normalizeHeaderValue(value: HeaderValue | null) {
   if (Array.isArray(value)) return value[0];
   return value ?? undefined;
+}
+
+function isSafeTokenVerificationError(error: unknown) {
+  return typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && SAFE_TOKEN_ERROR_CODES.has(String(error.code));
 }
 
 export function readBearerToken(input?: string | null | RequestLike) {
@@ -57,7 +70,11 @@ export async function requireTutor(req: RequestLike): Promise<DecodedIdToken> {
 
   try {
     return await adminAuth.verifyIdToken(token);
-  } catch {
-    throw new HttpError(401, AUTH_REQUIRED_MESSAGE);
+  } catch (error) {
+    if (isSafeTokenVerificationError(error)) {
+      throw new HttpError(401, AUTH_REQUIRED_MESSAGE);
+    }
+
+    throw error;
   }
 }

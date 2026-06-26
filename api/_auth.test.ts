@@ -9,6 +9,10 @@ vi.mock('./_firebase-admin.js', () => ({
   getAdminAuth,
 }));
 
+function firebaseAuthError(code: string) {
+  return Object.assign(new Error(code), { code });
+}
+
 describe('readBearerToken', () => {
   it('returns the token from a valid Bearer authorization header', () => {
     expect(readBearerToken('Bearer abc.def.ghi')).toBe('abc.def.ghi');
@@ -46,8 +50,13 @@ describe('requireTutor', () => {
     expect(getAdminAuth).not.toHaveBeenCalled();
   });
 
-  it('throws a safe 401 when Firebase rejects the bearer token', async () => {
-    const verifyIdToken = vi.fn().mockRejectedValue(new Error('invalid token'));
+  it.each([
+    'auth/argument-error',
+    'auth/id-token-expired',
+    'auth/id-token-revoked',
+    'auth/invalid-id-token',
+  ])('throws a safe 401 for Firebase token error %s', async (code) => {
+    const verifyIdToken = vi.fn().mockRejectedValue(firebaseAuthError(code));
     getAdminAuth.mockReturnValue({ verifyIdToken });
 
     await expect(requireTutor({ headers: { authorization: 'Bearer invalid-token' } })).rejects.toMatchObject({
@@ -73,5 +82,14 @@ describe('requireTutor', () => {
     });
 
     await expect(requireTutor({ headers: { authorization: 'Bearer valid-token' } })).rejects.toBe(initError);
+  });
+
+  it('does not misclassify unknown verification failures as 401 responses', async () => {
+    const verifyError = firebaseAuthError('auth/internal-error');
+    const verifyIdToken = vi.fn().mockRejectedValue(verifyError);
+    getAdminAuth.mockReturnValue({ verifyIdToken });
+
+    await expect(requireTutor({ headers: { authorization: 'Bearer valid-token' } })).rejects.toBe(verifyError);
+    expect(verifyIdToken).toHaveBeenCalledWith('valid-token');
   });
 });
