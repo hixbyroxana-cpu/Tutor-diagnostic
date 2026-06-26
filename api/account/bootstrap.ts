@@ -1,17 +1,12 @@
 import { getAdminDb } from '../_firebase-admin.js';
 import { handleApiError, requirePost, sendJson } from '../_http.js';
 import { requireTutor } from '../_auth.js';
-import { buildStarterTest, type StarterTestTemplate } from './bootstrap-core.js';
-
-function profileSummaryFromToken(tutor: Awaited<ReturnType<typeof requireTutor>>, existingCreatedAt: unknown, now: number) {
-  return {
-    uid: tutor.uid,
-    email: tutor.email ?? '',
-    displayName: tutor.name ?? '',
-    createdAt: typeof existingCreatedAt === 'number' ? existingCreatedAt : now,
-    templatesProvisionedAt: now,
-  };
-}
+import {
+  assertRequiredStarterTemplates,
+  buildStarterTest,
+  buildTutorProfile,
+  type StarterTestTemplate,
+} from './bootstrap-core.js';
 
 export default async function handler(req: any, res: any) {
   if (!requirePost(req, res)) return;
@@ -23,9 +18,10 @@ export default async function handler(req: any, res: any) {
 
     const templateSnapshot = await db.collection('testTemplates').get();
     const templates = templateSnapshot.docs.map(doc => ({
-      id: doc.id,
       ...doc.data(),
+      id: doc.id,
     })) as StarterTestTemplate[];
+    assertRequiredStarterTemplates(templates);
 
     const result = await db.runTransaction(async transaction => {
       const profileRef = db.collection('tutors').doc(tutor.uid);
@@ -37,7 +33,7 @@ export default async function handler(req: any, res: any) {
       const profileSnap = await transaction.get(profileRef);
       const testSnaps = await Promise.all(testRefs.map(({ ref }) => transaction.get(ref)));
       const existingProfile = profileSnap.exists ? profileSnap.data() : undefined;
-      const profile = profileSummaryFromToken(tutor, existingProfile?.createdAt, now);
+      const profile = buildTutorProfile(tutor, existingProfile, now);
       const createdStarterTestIds: string[] = [];
 
       transaction.set(profileRef, profile, { merge: true });
