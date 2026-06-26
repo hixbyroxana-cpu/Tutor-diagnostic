@@ -10,9 +10,8 @@ function publicQuestion(question: Question) {
   return safeQuestion;
 }
 
-function publicTest(test: Test) {
+export function buildPublicTestPayload(test: Test) {
   return {
-    id: test.id,
     title: test.title,
     level: test.level,
     slug: test.slug,
@@ -48,7 +47,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const doc = snapshot.docs[0];
-    sendJson(res, 200, publicTest({ ...doc.data(), id: doc.id } as Test));
+    sendJson(res, 200, buildPublicTestPayload({ ...doc.data(), id: doc.id } as Test));
   } catch (error) {
     handleApiError(res, error, 'Failed to load public test.');
   }

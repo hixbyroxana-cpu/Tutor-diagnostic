@@ -12,7 +12,6 @@ type PublicQuestion = Omit<Question, 'correctAnswer' | 'explanation' | 'target'>
 const UUID_LIKE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface PublicTest {
-  id: string;
   title: string;
   level: TestLevel;
   slug: string;
@@ -42,6 +41,14 @@ function getSubmissionIdForSlug(slug: string) {
     return next;
   } catch {
     return createSubmissionId();
+  }
+}
+
+function clearSubmissionIdForSlug(slug: string) {
+  try {
+    sessionStorage.removeItem(`public-test-submission-id:${slug}`);
+  } catch {
+    // Storage may be unavailable; a fresh in-memory id is enough for later attempts.
   }
 }
 
@@ -79,7 +86,7 @@ export default function PublicTestRunner() {
         setError('');
         setAnswers({});
         setStage('intro');
-        setSubmissionId(getSubmissionIdForSlug(slug));
+        setSubmissionId('');
 
         const response = await fetch(`/api/public/test?slug=${encodeURIComponent(slug)}`, {
           signal: controller.signal,
@@ -109,6 +116,9 @@ export default function PublicTestRunner() {
 
   const handleStart = (e: FormEvent) => {
     e.preventDefault();
+    if (test) {
+      setSubmissionId(getSubmissionIdForSlug(test.slug));
+    }
     setStage('testing');
     window.scrollTo(0, 0);
   };
@@ -152,6 +162,8 @@ export default function PublicTestRunner() {
         throw new Error(body.error || 'Failed to submit test.');
       }
 
+      clearSubmissionIdForSlug(test.slug);
+      setSubmissionId('');
       setStage('completed');
       window.scrollTo(0, 0);
     } catch (err) {

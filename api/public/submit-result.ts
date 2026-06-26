@@ -31,40 +31,30 @@ function bodyString(body: Record<string, unknown>, key: string) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
 
-async function loadActiveTest(db: Firestore, body: Record<string, unknown>) {
+export function requireSubmissionSlug(body: Record<string, unknown>) {
   const slug = bodyString(body, 'slug') || bodyString(body, 'testSlug');
-  if (slug) {
-    const snapshot = await db
-      .collection('tests')
-      .where('slug', '==', slug)
-      .where('isActive', '==', true)
-      .limit(1)
-      .get();
-
-    if (snapshot.empty) {
-      throw new HttpError(404, 'Test not found or no longer active.');
-    }
-
-    const doc = snapshot.docs[0];
-    return { ...doc.data(), id: doc.id } as Test;
-  }
-
-  const testId = bodyString(body, 'testId');
-  if (!testId) {
+  if (!slug) {
     throw new HttpError(400, 'slug is required.');
   }
 
-  const doc = await db.collection('tests').doc(testId).get();
-  if (!doc.exists) {
+  return slug;
+}
+
+async function loadActiveTest(db: Firestore, body: Record<string, unknown>) {
+  const slug = requireSubmissionSlug(body);
+  const snapshot = await db
+    .collection('tests')
+    .where('slug', '==', slug)
+    .where('isActive', '==', true)
+    .limit(1)
+    .get();
+
+  if (snapshot.empty) {
     throw new HttpError(404, 'Test not found or no longer active.');
   }
 
-  const test = { ...doc.data(), id: doc.id } as Test;
-  if (!test.isActive) {
-    throw new HttpError(404, 'Test not found or no longer active.');
-  }
-
-  return test;
+  const doc = snapshot.docs[0];
+  return { ...doc.data(), id: doc.id } as Test;
 }
 
 function isAlreadyExistsError(error: unknown) {
