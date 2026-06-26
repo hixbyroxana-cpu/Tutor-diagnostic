@@ -120,6 +120,20 @@ describe('buildStoredResult', () => {
     expect(result.parentEmail).toBe('');
     expect(result.notes).toBe('');
   });
+
+  it('uses a Firestore-safe owner fallback for legacy ownerless tests', () => {
+    const legacyOwnerlessTest = storedTest({ ownerId: undefined } as Partial<Test>);
+
+    const result = buildStoredResult(
+      legacyOwnerlessTest,
+      { q1: '5' },
+      { studentFirstName: 'Legacy', studentLastName: 'Student' },
+      submissionId,
+      completedAt,
+    );
+
+    expect(result.ownerId).toBe('');
+  });
 });
 
 describe('submission validation helpers', () => {

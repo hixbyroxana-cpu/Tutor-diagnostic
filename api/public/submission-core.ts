@@ -4,6 +4,7 @@ import { HttpError } from '../_http.js';
 
 const UUID_LIKE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_STUDENT_NAME_LENGTH = 80;
+const LEGACY_OWNERLESS_RESULT_OWNER_ID = '';
 
 export interface PublicStudentInfo extends StudentResultInfo {
   studentFirstName: string;
@@ -92,7 +93,8 @@ export function buildStoredResult(
 
   return {
     ...calculateTestResults(test, answers, normalizedStudentInfo),
-    ownerId: test.ownerId,
+    // Legacy public tests may be ownerless until migration; keep writes Firestore-safe.
+    ownerId: test.ownerId ?? LEGACY_OWNERLESS_RESULT_OWNER_ID,
     isNew: true,
     completedAt,
     submissionId,
