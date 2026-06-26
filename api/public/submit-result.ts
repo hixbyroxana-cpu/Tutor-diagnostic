@@ -6,6 +6,7 @@ import {
   assertSubmissionId,
   assertStudentInfo,
   buildStoredResult,
+  type DuplicateSubmissionResponse,
   duplicateSubmissionResponse,
   normalizeAnswers,
 } from './submission-core.js';
@@ -40,8 +41,19 @@ export function requireSubmissionSlug(body: Record<string, unknown>) {
   return slug;
 }
 
-async function loadActiveTest(db: Firestore, body: Record<string, unknown>) {
-  const slug = requireSubmissionSlug(body);
+export function duplicateResponseForExistingSubmission(
+  resultId: string,
+  existingResult: Record<string, unknown> | undefined,
+  requestedSlug: string,
+): DuplicateSubmissionResponse {
+  if (existingResult?.testSlug !== requestedSlug) {
+    throw new HttpError(409, 'submissionId already belongs to a different test.');
+  }
+
+  return duplicateSubmissionResponse(resultId);
+}
+
+async function loadActiveTest(db: Firestore, slug: string) {
   const snapshot = await db
     .collection('tests')
     .where('slug', '==', slug)
@@ -69,25 +81,27 @@ export default async function handler(req: any, res: any) {
   try {
     const body = requestBody(req);
     const submissionId = assertSubmissionId(body.submissionId);
-    const studentInfo = assertStudentInfo(body.studentInfo);
-    const answers = normalizeAnswers(body.answers);
+    const slug = requireSubmissionSlug(body);
     const db = getAdminDb();
-    const test = await loadActiveTest(db, body);
     const resultRef = db.collection('testResults').doc(submissionId);
     const existing = await resultRef.get();
 
     if (existing.exists) {
-      sendJson(res, 200, duplicateSubmissionResponse(existing.id));
+      sendJson(res, 200, duplicateResponseForExistingSubmission(existing.id, existing.data(), slug));
       return;
     }
 
+    const studentInfo = assertStudentInfo(body.studentInfo);
+    const answers = normalizeAnswers(body.answers);
+    const test = await loadActiveTest(db, slug);
     const result = buildStoredResult(test, answers, studentInfo, submissionId, Date.now());
 
     try {
       await resultRef.create(result);
     } catch (error) {
       if (isAlreadyExistsError(error)) {
-        sendJson(res, 200, duplicateSubmissionResponse(resultRef.id));
+        const reread = await resultRef.get();
+        sendJson(res, 200, duplicateResponseForExistingSubmission(resultRef.id, reread.data(), slug));
         return;
       }
 
