@@ -32,7 +32,7 @@ function bodyString(body: Record<string, unknown>, key: string) {
 }
 
 export function requireSubmissionSlug(body: Record<string, unknown>) {
-  const slug = bodyString(body, 'slug') || bodyString(body, 'testSlug');
+  const slug = bodyString(body, 'slug');
   if (!slug) {
     throw new HttpError(400, 'slug is required.');
   }
