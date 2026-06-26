@@ -7,8 +7,13 @@ import { db, doc, getDoc, collection, addDoc, updateDoc } from '../firebase';
 import { LegacyTest, TestCreatePayload, TestUpdatePayload, TestLevel, Question, QuestionDifficulty, VisualAspectType } from '../types';
 import { generateSpecificQuestions } from '../services/gemini';
 import QuestionVisualizer from '../components/QuestionVisualizer';
+import { useAuth } from '../auth/AuthProvider';
+import { belongsToTutor } from '../lib/ownership';
+import { shouldFilterByOwner } from '../lib/tutor-query';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
+const authRequired = import.meta.env.VITE_AUTH_REQUIRED;
 
 const LEVELS: TestLevel[] = ['Year 2', 'Year 3', 'Year 4', 'Year 5', 'Year 6', '11+', 'KS3', 'GCSE Foundation', 'GCSE Higher', 'A-Level', 'Adult'];
 const OVERALL_REVISION = 'Overall revision';
@@ -198,11 +203,13 @@ const extractTextFromPdf = async (file: File) => {
 export default function TestEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   
   const [loading, setLoading] = useState(!!id);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
+  const [accessDenied, setAccessDenied] = useState(false);
   
   const [title, setTitle] = useState('');
   const [titleManuallyEdited, setTitleManuallyEdited] = useState(false);
@@ -289,9 +296,24 @@ export default function TestEditor() {
 
   useEffect(() => {
     if (id) {
+      if (authRequired === 'true' && !user?.uid) {
+        setError('Authentication required.');
+        setAccessDenied(true);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
       getDoc(doc(db, 'tests', id)).then((snap) => {
         if (snap.exists()) {
           const data = snap.data() as LegacyTest;
+          if (shouldFilterByOwner(authRequired, user?.uid) && !belongsToTutor(data, user!.uid)) {
+            setError('You do not have access to this test.');
+            setAccessDenied(true);
+            setLoading(false);
+            return;
+          }
+
           setTitle(data.title);
           setLevel(data.level);
           setDescription(data.description);
@@ -303,7 +325,7 @@ export default function TestEditor() {
         setLoading(false);
       });
     }
-  }, [id]);
+  }, [id, user?.uid]);
 
   const handleGenerateFull = async () => {
     if (!level) return;
@@ -406,6 +428,11 @@ export default function TestEditor() {
     const finalQuestions = [...questions, ...aiDrafts];
     const slug = slugify(title);
     
+    if (authRequired === 'true' && !user?.uid) {
+      setError('Authentication required.');
+      return;
+    }
+
     if (!title.trim() || finalQuestions.length === 0) {
       setError('Title and at least 1 question are required.');
       return;
@@ -429,6 +456,7 @@ export default function TestEditor() {
       } else {
         const createPayload: TestCreatePayload = {
           ...updatePayload,
+          ownerId: user?.uid || '',
           createdAt: Date.now(),
         };
         await addDoc(collection(db, 'tests'), createPayload);
@@ -481,6 +509,7 @@ export default function TestEditor() {
   };
 
   if (loading) return <div className="animate-pulse">Loading...</div>;
+  if (accessDenied) return <div className="p-8">{error || 'You do not have access to this test.'}</div>;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-24">

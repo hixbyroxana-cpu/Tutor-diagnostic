@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Plus, Search, Copy, Check, Edit, Trash2 } from 'lucide-react';
-import { db, collection, getDocs, query, orderBy, doc, updateDoc } from '../firebase';
+import { Link } from 'react-router-dom';
+import { Plus, Copy, Check, Edit } from 'lucide-react';
+import { db, collection, getDocs, query, orderBy, where } from '../firebase';
+import { useAuth } from '../auth/AuthProvider';
 import { LegacyTest } from '../types';
+import { getPublicAppBaseUrl, shouldFilterByOwner } from '../lib/tutor-query';
 import { cn, getLevelColor } from '../lib/utils';
 
+const authRequired = import.meta.env.VITE_AUTH_REQUIRED;
+
 export default function TestsList() {
+  const { user } = useAuth();
   const [tests, setTests] = useState<LegacyTest[]>([]);
   const [loading, setLoading] = useState(true);
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
@@ -13,7 +18,9 @@ export default function TestsList() {
   useEffect(() => {
     async function fetchTests() {
       try {
-        const q = query(collection(db, 'tests'), orderBy('createdAt', 'desc'));
+        const q = shouldFilterByOwner(authRequired, user?.uid)
+          ? query(collection(db, 'tests'), where('ownerId', '==', user!.uid), orderBy('createdAt', 'desc'))
+          : query(collection(db, 'tests'), orderBy('createdAt', 'desc'));
         const snap = await getDocs(q);
         setTests(snap.docs.map(d => ({ id: d.id, ...d.data() } as LegacyTest)));
       } catch (err) {
@@ -23,10 +30,11 @@ export default function TestsList() {
       }
     }
     fetchTests();
-  }, []);
+  }, [user?.uid]);
 
   const copyLink = (slug: string) => {
-    const url = `${window.location.origin}/test/${slug}`;
+    const baseUrl = getPublicAppBaseUrl(import.meta.env.VITE_PUBLIC_APP_URL, window.location.origin);
+    const url = `${baseUrl}/test/${slug}`;
     navigator.clipboard.writeText(url);
     setCopiedSlug(slug);
     setTimeout(() => setCopiedSlug(null), 2000);

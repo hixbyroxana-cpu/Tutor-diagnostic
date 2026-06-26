@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, Users, Clock, ArrowRight, ExternalLink, Copy, Edit } from 'lucide-react';
-import { db, collection, getDocs, query, orderBy, limit } from '../firebase';
+import { Copy, Edit } from 'lucide-react';
+import { db, collection, getDocs, query, orderBy, limit, where } from '../firebase';
+import { useAuth } from '../auth/AuthProvider';
 import { LegacyTest, LegacyTestResult } from '../types';
+import { getPublicAppBaseUrl, shouldFilterByOwner } from '../lib/tutor-query';
 import { cn, getLevelColor } from '../lib/utils';
 
+const authRequired = import.meta.env.VITE_AUTH_REQUIRED;
+
 export default function Dashboard() {
+  const { user } = useAuth();
   const [tests, setTests] = useState<LegacyTest[]>([]);
   const [results, setResults] = useState<LegacyTestResult[]>([]);
   const [loading, setLoading] = useState(true);
@@ -14,11 +19,16 @@ export default function Dashboard() {
   useEffect(() => {
     async function loadData() {
       try {
-        const testsQ = query(collection(db, 'tests'), orderBy('createdAt', 'desc'), limit(5));
+        const filterByOwner = shouldFilterByOwner(authRequired, user?.uid);
+        const testsQ = filterByOwner
+          ? query(collection(db, 'tests'), where('ownerId', '==', user!.uid), orderBy('createdAt', 'desc'), limit(5))
+          : query(collection(db, 'tests'), orderBy('createdAt', 'desc'), limit(5));
         const testsSnap = await getDocs(testsQ);
         const testsData = testsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as LegacyTest));
 
-        const resQ = query(collection(db, 'testResults'), orderBy('completedAt', 'desc'), limit(10));
+        const resQ = filterByOwner
+          ? query(collection(db, 'testResults'), where('ownerId', '==', user!.uid), orderBy('completedAt', 'desc'), limit(10))
+          : query(collection(db, 'testResults'), orderBy('completedAt', 'desc'), limit(10));
         const resSnap = await getDocs(resQ);
         const resData = resSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as LegacyTestResult));
 
@@ -31,10 +41,11 @@ export default function Dashboard() {
       }
     }
     loadData();
-  }, []);
+  }, [user?.uid]);
 
   const copyLink = (slug: string) => {
-    const url = `${window.location.origin}/test/${slug}`;
+    const baseUrl = getPublicAppBaseUrl(import.meta.env.VITE_PUBLIC_APP_URL, window.location.origin);
+    const url = `${baseUrl}/test/${slug}`;
     navigator.clipboard.writeText(url);
     setCopiedSlug(slug);
     setTimeout(() => setCopiedSlug(null), 2000);
