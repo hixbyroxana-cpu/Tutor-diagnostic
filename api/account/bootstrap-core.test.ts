@@ -3,6 +3,7 @@ import {
   assertRequiredStarterTemplates,
   buildStarterTest,
   buildTutorProfile,
+  selectRequiredStarterTemplates,
   type StarterTestTemplate,
 } from './bootstrap-core.js';
 import type { Test } from '../../src/types.js';
@@ -108,6 +109,21 @@ describe('assertRequiredStarterTemplates', () => {
       template({ id: 'gcse-foundation-overall-revision', title: 'GCSE Foundation Overall Revision' }),
       template({ id: 'extra-template' }),
     ])).not.toThrow();
+  });
+});
+
+describe('selectRequiredStarterTemplates', () => {
+  it('returns exactly the required starter templates in deterministic order', () => {
+    const selectedTemplates = selectRequiredStarterTemplates([
+      template({ id: 'extra-template', title: 'Extra Template' }),
+      template({ id: 'gcse-foundation-overall-revision', title: 'GCSE Foundation Overall Revision' }),
+      template({ id: '11-plus-diagnostic', title: '11+ Diagnostic' }),
+    ]);
+
+    expect(selectedTemplates.map(selectedTemplate => selectedTemplate.id)).toEqual([
+      '11-plus-diagnostic',
+      'gcse-foundation-overall-revision',
+    ]);
   });
 });
 

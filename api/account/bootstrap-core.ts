@@ -31,6 +31,13 @@ export function assertRequiredStarterTemplates(templates: StarterTestTemplate[])
   }
 }
 
+export function selectRequiredStarterTemplates(templates: StarterTestTemplate[]) {
+  assertRequiredStarterTemplates(templates);
+  const templatesById = new Map(templates.map(template => [template.id, template]));
+
+  return REQUIRED_STARTER_TEMPLATE_IDS.map(templateId => templatesById.get(templateId)!);
+}
+
 export function buildTutorProfile(tutor: TutorIdentity, existingProfile: ExistingTutorProfile | undefined, now: number): TutorProfile {
   const email = tutor.email ?? '';
   const displayName = tutor.name || email.split('@')[0] || 'Tutor';

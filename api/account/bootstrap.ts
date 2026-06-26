@@ -2,9 +2,9 @@ import { getAdminDb } from '../_firebase-admin.js';
 import { handleApiError, requirePost, sendJson } from '../_http.js';
 import { requireTutor } from '../_auth.js';
 import {
-  assertRequiredStarterTemplates,
   buildStarterTest,
   buildTutorProfile,
+  selectRequiredStarterTemplates,
   type StarterTestTemplate,
 } from './bootstrap-core.js';
 
@@ -21,11 +21,11 @@ export default async function handler(req: any, res: any) {
       ...doc.data(),
       id: doc.id,
     })) as StarterTestTemplate[];
-    assertRequiredStarterTemplates(templates);
+    const requiredTemplates = selectRequiredStarterTemplates(templates);
 
     const result = await db.runTransaction(async transaction => {
       const profileRef = db.collection('tutors').doc(tutor.uid);
-      const testRefs = templates.map(template => ({
+      const testRefs = requiredTemplates.map(template => ({
         template,
         ref: db.collection('tests').doc(`${tutor.uid}_${template.id}`),
       }));
