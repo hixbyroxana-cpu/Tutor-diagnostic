@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { db, doc, getDoc, updateDoc } from '../firebase';
 import { LegacyTestResult } from '../types';
@@ -50,6 +50,8 @@ function buildStructuredParentMessage(result: LegacyTestResult) {
 export default function ResultDetail() {
   const { id } = useParams();
   const { user } = useAuth();
+  const activeResultContextRef = useRef<{ id?: string; uid?: string } | null>(null);
+  const summaryRequestRef = useRef(0);
   const [result, setResult] = useState<LegacyTestResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [generatingSummary, setGeneratingSummary] = useState(false);
@@ -58,9 +60,11 @@ export default function ResultDetail() {
 
   useEffect(() => {
     let ignore = false;
+    activeResultContextRef.current = { id, uid: user?.uid };
 
     async function loadResult() {
       setAccessDenied(false);
+      setGeneratingSummary(false);
       setResult(null);
       setLoading(true);
 
@@ -91,7 +95,7 @@ export default function ResultDetail() {
           
           // Auto-generate parent summary if it doesn't exist
           if (!data.parentSummary) {
-            generateSummary(data);
+            generateSummary(data, id, user?.uid);
           }
         }
       } catch (err) {
@@ -105,24 +109,42 @@ export default function ResultDetail() {
 
     return () => {
       ignore = true;
+      summaryRequestRef.current += 1;
+      activeResultContextRef.current = null;
     };
   }, [id, user?.uid]);
 
-  const generateSummary = async (data: LegacyTestResult) => {
-    if (!id) return;
-    if (authRequired === 'true' && !user?.uid) return;
-    if (shouldFilterByOwner(authRequired, user?.uid) && !belongsToTutor(data, user!.uid)) return;
+  const generateSummary = async (
+    data: LegacyTestResult,
+    expectedId = id,
+    expectedUid = user?.uid,
+  ) => {
+    if (!expectedId) return;
+    if (authRequired === 'true' && !expectedUid) return;
+    if (shouldFilterByOwner(authRequired, expectedUid) && !belongsToTutor(data, expectedUid!)) return;
+
+    const requestId = summaryRequestRef.current + 1;
+    summaryRequestRef.current = requestId;
+    const isCurrentRequest = () => {
+      const context = activeResultContextRef.current;
+      return summaryRequestRef.current === requestId &&
+        context?.id === expectedId &&
+        context?.uid === expectedUid;
+    };
 
     setGeneratingSummary(true);
     try {
       const summary = await generateParentSummary(data);
+      if (!isCurrentRequest()) return;
       
-      await updateDoc(doc(db, 'testResults', id), { parentSummary: summary });
+      await updateDoc(doc(db, 'testResults', expectedId), { parentSummary: summary });
+      if (!isCurrentRequest()) return;
       setResult(prev => prev ? { ...prev, parentSummary: summary } : null);
     } catch (err) {
+      if (!isCurrentRequest()) return;
       console.error('Failed to generate summary', err);
     } finally {
-      setGeneratingSummary(false);
+      if (isCurrentRequest()) setGeneratingSummary(false);
     }
   };
 
