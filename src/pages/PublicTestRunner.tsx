@@ -1,16 +1,56 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
-import { db, collection, getDocs, query, where, addDoc } from '../firebase';
-import { LegacyTest, LegacyTestResult, Question } from '../types';
-import { calculateTestResults } from '../lib/marking';
+import type { Question, TestLevel, VisualData, VisualAspectType } from '../types';
 
 import QuestionVisualizer from '../components/QuestionVisualizer';
 
+type PublicQuestion = Omit<Question, 'correctAnswer' | 'explanation' | 'target'> & {
+  visualType?: VisualAspectType;
+  visualData?: VisualData;
+};
+
+const UUID_LIKE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+interface PublicTest {
+  id: string;
+  title: string;
+  level: TestLevel;
+  slug: string;
+  description: string;
+  questions: PublicQuestion[];
+}
+
+function createSubmissionId() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, c =>
+    (Number(c) ^ ((Math.random() * 16) >> (Number(c) / 4))).toString(16)
+  );
+}
+
+function getSubmissionIdForSlug(slug: string) {
+  const key = `public-test-submission-id:${slug}`;
+
+  try {
+    const existing = sessionStorage.getItem(key);
+    if (existing && UUID_LIKE_PATTERN.test(existing)) return existing;
+
+    const next = createSubmissionId();
+    sessionStorage.setItem(key, next);
+    return next;
+  } catch {
+    return createSubmissionId();
+  }
+}
+
 export default function PublicTestRunner() {
   const { slug } = useParams();
-  const [test, setTest] = useState<LegacyTest | null>(null);
+  const [test, setTest] = useState<PublicTest | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [submissionId, setSubmissionId] = useState('');
   
   // State: 'intro', 'testing', 'completed'
   const [stage, setStage] = useState<'intro' | 'testing' | 'completed'>('intro');
@@ -25,23 +65,46 @@ export default function PublicTestRunner() {
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
   useEffect(() => {
+    if (!slug) {
+      setError('Test not found or no longer active.');
+      setLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+
     async function loadTest() {
       try {
-        const q = query(collection(db, 'tests'), where('slug', '==', slug), where('isActive', '==', true));
-        const snap = await getDocs(q);
-        if (snap.empty) {
-          setError('Test not found or no longer active.');
-        } else {
-          setTest({ id: snap.docs[0].id, ...snap.docs[0].data() } as LegacyTest);
+        setLoading(true);
+        setError('');
+        setAnswers({});
+        setStage('intro');
+        setSubmissionId(getSubmissionIdForSlug(slug));
+
+        const response = await fetch(`/api/public/test?slug=${encodeURIComponent(slug)}`, {
+          signal: controller.signal,
+        });
+        const body = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(body.error || 'Test not found or no longer active.');
         }
+
+        setTest(body as PublicTest);
       } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
         console.error(err);
-        setError('Failed to load test.');
+        setError(err instanceof Error ? err.message : 'Failed to load test.');
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
       }
     }
+
     loadTest();
+
+    return () => controller.abort();
   }, [slug]);
 
   const handleStart = (e: FormEvent) => {
@@ -60,29 +123,35 @@ export default function PublicTestRunner() {
     // Quick validation check
     const answeredCount = Object.keys(answers).length;
     if (answeredCount < test.questions.length) {
-      if (!window.confirm(`You have only answered ${answeredCount} out of ${test.questions.length} questions. Are you sure you want to construct?`)) {
+      if (!window.confirm(`You have only answered ${answeredCount} out of ${test.questions.length} questions. Are you sure you want to submit?`)) {
         return;
       }
     }
 
     setSubmitting(true);
     try {
-      // Auto-mark and generate result
-      const resultData = calculateTestResults(test, answers, {
-        studentFirstName,
-        studentLastName,
-        parentName: '',
-        parentEmail,
-        notes: ''
+      const response = await fetch('/api/public/submit-result', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slug: test.slug,
+          submissionId: submissionId || getSubmissionIdForSlug(test.slug),
+          studentInfo: {
+            studentFirstName,
+            studentLastName,
+            parentName: '',
+            parentEmail,
+            notes: '',
+          },
+          answers,
+        }),
       });
 
-      const finalResult: LegacyTestResult = {
-        ...resultData,
-        completedAt: Date.now(),
-        isNew: true,
-      };
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || 'Failed to submit test.');
+      }
 
-      await addDoc(collection(db, 'testResults'), finalResult);
       setStage('completed');
       window.scrollTo(0, 0);
     } catch (err) {
