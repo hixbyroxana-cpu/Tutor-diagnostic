@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url';
 import { getAdminDb } from '../api/_firebase-admin.js';
 
 const TEMPLATE_SOURCES = [
@@ -5,7 +6,18 @@ const TEMPLATE_SOURCES = [
   { sourceId: 'W4P9LRmsoy0psFmaJR9U', templateId: 'gcse-foundation-overall-revision' },
 ] as const;
 
-async function main() {
+export function buildTemplatePayload(sourceData: Record<string, unknown>, sourceId: string, now: number) {
+  const { ownerId, id, ...sanitizedSourceData } = sourceData;
+
+  return {
+    ...sanitizedSourceData,
+    templateVersion: 1,
+    templateSourceTestId: sourceId,
+    updatedAt: now,
+  };
+}
+
+export async function main() {
   const db = getAdminDb();
   const now = Date.now();
 
@@ -16,20 +28,16 @@ async function main() {
       throw new Error(`Missing source test ${sourceId} for template ${templateId}.`);
     }
 
-    const { ownerId, id, ...sourceData } = sourceSnap.data() ?? {};
-    const templatePayload = {
-      ...sourceData,
-      templateVersion: 1,
-      templateSourceTestId: sourceId,
-      updatedAt: now,
-    };
+    const templatePayload = buildTemplatePayload(sourceSnap.data() ?? {}, sourceId, now);
 
-    await db.collection('testTemplates').doc(templateId).set(templatePayload, { merge: true });
+    await db.collection('testTemplates').doc(templateId).set(templatePayload);
     console.log(`Seeded testTemplates/${templateId} from tests/${sourceId}.`);
   }
 }
 
-main().catch(error => {
-  console.error(error);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch(error => {
+    console.error(error);
+    process.exit(1);
+  });
+}
