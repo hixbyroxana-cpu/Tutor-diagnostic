@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import type { Question, TestLevel, VisualData, VisualAspectType } from '../types';
+import { clearPublicAttemptId, startPublicAttemptId } from '../lib/publicAttemptId';
 
 import QuestionVisualizer from '../components/QuestionVisualizer';
 
@@ -9,47 +10,12 @@ type PublicQuestion = Omit<Question, 'correctAnswer' | 'explanation' | 'target'>
   visualData?: VisualData;
 };
 
-const UUID_LIKE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 interface PublicTest {
   title: string;
   level: TestLevel;
   slug: string;
   description: string;
   questions: PublicQuestion[];
-}
-
-function createSubmissionId() {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID();
-  }
-
-  return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, c =>
-    (Number(c) ^ ((Math.random() * 16) >> (Number(c) / 4))).toString(16)
-  );
-}
-
-function getSubmissionIdForSlug(slug: string) {
-  const key = `public-test-submission-id:${slug}`;
-
-  try {
-    const existing = sessionStorage.getItem(key);
-    if (existing && UUID_LIKE_PATTERN.test(existing)) return existing;
-
-    const next = createSubmissionId();
-    sessionStorage.setItem(key, next);
-    return next;
-  } catch {
-    return createSubmissionId();
-  }
-}
-
-function clearSubmissionIdForSlug(slug: string) {
-  try {
-    sessionStorage.removeItem(`public-test-submission-id:${slug}`);
-  } catch {
-    // Storage may be unavailable; a fresh in-memory id is enough for later attempts.
-  }
 }
 
 export default function PublicTestRunner() {
@@ -87,6 +53,7 @@ export default function PublicTestRunner() {
         setAnswers({});
         setStage('intro');
         setSubmissionId('');
+        clearPublicAttemptId(slug);
 
         const response = await fetch(`/api/public/test?slug=${encodeURIComponent(slug)}`, {
           signal: controller.signal,
@@ -117,7 +84,7 @@ export default function PublicTestRunner() {
   const handleStart = (e: FormEvent) => {
     e.preventDefault();
     if (test) {
-      setSubmissionId(getSubmissionIdForSlug(test.slug));
+      setSubmissionId(startPublicAttemptId(test.slug));
     }
     setStage('testing');
     window.scrollTo(0, 0);
@@ -145,7 +112,7 @@ export default function PublicTestRunner() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           slug: test.slug,
-          submissionId: submissionId || getSubmissionIdForSlug(test.slug),
+          submissionId: submissionId || startPublicAttemptId(test.slug),
           studentInfo: {
             studentFirstName,
             studentLastName,
@@ -162,7 +129,7 @@ export default function PublicTestRunner() {
         throw new Error(body.error || 'Failed to submit test.');
       }
 
-      clearSubmissionIdForSlug(test.slug);
+      clearPublicAttemptId(test.slug);
       setSubmissionId('');
       setStage('completed');
       window.scrollTo(0, 0);
