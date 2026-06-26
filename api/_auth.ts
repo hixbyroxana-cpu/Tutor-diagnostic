@@ -53,8 +53,10 @@ export async function requireTutor(req: RequestLike): Promise<DecodedIdToken> {
     throw new HttpError(401, AUTH_REQUIRED_MESSAGE);
   }
 
+  const adminAuth = getAdminAuth();
+
   try {
-    return await getAdminAuth().verifyIdToken(token);
+    return await adminAuth.verifyIdToken(token);
   } catch {
     throw new HttpError(401, AUTH_REQUIRED_MESSAGE);
   }
