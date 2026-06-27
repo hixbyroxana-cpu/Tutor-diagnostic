@@ -21,6 +21,8 @@ export default function ResultsList() {
     async function fetchResults() {
       setLoading(true);
       setResults([]);
+      setSearch('');
+      setFilterLevel('All');
 
       try {
         const q = shouldFilterByOwner(authRequired, user?.uid)

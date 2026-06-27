@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Save, Sparkles, Trash2, Plus, GripVertical, ChevronDown, ChevronRight, AlertCircle, Image as ImageIcon } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -10,6 +10,7 @@ import QuestionVisualizer from '../components/QuestionVisualizer';
 import { useAuth } from '../auth/AuthProvider';
 import { belongsToTutor, resolveTestSlug } from '../lib/ownership';
 import { canEditOwnedRecord, shouldFilterByOwner } from '../lib/tutor-query';
+import { isEditorRequestContextCurrent, type EditorRequestContext } from '../lib/editor-request-context';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -205,6 +206,12 @@ export default function TestEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const editorContextRef = useRef<EditorRequestContext>({
+    testId: id,
+    uid: user?.uid,
+    generation: 0,
+  });
+  const editorMountedRef = useRef(false);
   
   const [loading, setLoading] = useState(!!id);
   const [saving, setSaving] = useState(false);
@@ -276,6 +283,24 @@ export default function TestEditor() {
         : '',
     aiPrompt,
   ].filter(Boolean).join('\n\n');
+
+  useLayoutEffect(() => {
+    if (editorContextRef.current.testId !== id || editorContextRef.current.uid !== user?.uid) {
+      editorContextRef.current = {
+        testId: id,
+        uid: user?.uid,
+        generation: editorContextRef.current.generation + 1,
+      };
+    }
+
+    editorMountedRef.current = true;
+    return () => {
+      editorMountedRef.current = false;
+    };
+  }, [id, user?.uid]);
+
+  const isCurrentEditorRequest = (requestContext: EditorRequestContext) =>
+    editorMountedRef.current && isEditorRequestContextCurrent(requestContext, editorContextRef.current);
 
   useEffect(() => {
     if (!showCurriculumSelector) {
@@ -379,6 +404,7 @@ export default function TestEditor() {
 
   const handleGenerateFull = async () => {
     if (!level) return;
+    const requestContext = editorContextRef.current;
     setGenerating(true);
     setError('');
     setGenerationStatus('');
@@ -387,6 +413,8 @@ export default function TestEditor() {
       const generated: Question[] = [];
 
       for (let batch = 0; batch < batches; batch += 1) {
+        if (!isCurrentEditorRequest(requestContext)) return;
+
         const remaining = fullGenCount - generated.length;
         const batchSize = Math.min(5, remaining);
         const batchPrompt = [
@@ -397,20 +425,27 @@ export default function TestEditor() {
 
         setGenerationStatus(`Generating ${generated.length + batchSize} of ${fullGenCount}...`);
         const qs = await generateSpecificQuestions(level, batchPrompt, batchSize);
+        if (!isCurrentEditorRequest(requestContext)) return;
+
         generated.push(...qs);
         setAiDrafts([...generated]);
         setExpandedQs(new Set([generated[0].id]));
       }
     } catch (err: any) {
-      setError(err.message || 'Error generating test');
+      if (isCurrentEditorRequest(requestContext)) {
+        setError(err.message || 'Error generating test');
+      }
     } finally {
-      setGenerationStatus('');
-      setGenerating(false);
+      if (isCurrentEditorRequest(requestContext)) {
+        setGenerationStatus('');
+        setGenerating(false);
+      }
     }
   };
 
   const handleGenerateSpecific = async () => {
     if (!level || !genPrompt.trim()) return;
+    const requestContext = editorContextRef.current;
     setGenerating(true);
     setError('');
     setGenerationStatus('');
@@ -421,29 +456,39 @@ export default function TestEditor() {
           ? `${genPrompt}\n\nCurriculum scope: overall ${level} revision`
         : genPrompt;
       const qs = await generateSpecificQuestions(level, description, genCount);
+      if (!isCurrentEditorRequest(requestContext)) return;
+
       setAiDrafts(prev => [...prev, ...qs]);
       setExpandedQs(prev => new Set(prev).add(qs[0].id));
       setGenPrompt('');
     } catch (err: any) {
-      setError(err.message || 'Error generating questions');
+      if (isCurrentEditorRequest(requestContext)) {
+        setError(err.message || 'Error generating questions');
+      }
     } finally {
-      setGenerationStatus('');
-      setGenerating(false);
+      if (isCurrentEditorRequest(requestContext)) {
+        setGenerationStatus('');
+        setGenerating(false);
+      }
     }
   };
 
   const handleCurriculumUpload = async (file: File | undefined) => {
     if (!file) return;
+    const requestContext = editorContextRef.current;
 
     try {
       const text = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
         ? await extractTextFromPdf(file)
         : await file.text();
+      if (!isCurrentEditorRequest(requestContext)) return;
 
       setCurriculumText(text);
       const chapters = parseCurriculumChapters(text);
       setSelectedChapter(chapters[0] || '');
     } catch (err) {
+      if (!isCurrentEditorRequest(requestContext)) return;
+
       console.error(err);
       setError('Could not read that curriculum file. Please try a text, CSV, Markdown, or selectable-text PDF file.');
     }
