@@ -1256,7 +1256,7 @@ The script:
 
 - Looks up the Firebase user by email through Admin Auth.
 - Prints the UID and counts of `tests` and `testResults` without `ownerId`.
-- In non-dry-run mode, batch-updates those documents with Roxana's UID.
+- With the explicit `--apply` mode, batch-updates those documents with Roxana's UID.
 - Never changes IDs, slugs, questions, results, or timestamps.
 - Prints before/after counts and exits non-zero if any record remains ownerless.
 
@@ -1417,7 +1417,7 @@ npx tsx scripts/migrate-existing-owner.ts --owner-email roxana.scurtu@yahoo.com 
 After reviewing counts, run:
 
 ```bash
-npx tsx scripts/migrate-existing-owner.ts --owner-email roxana.scurtu@yahoo.com
+npx tsx scripts/migrate-existing-owner.ts --owner-email roxana.scurtu@yahoo.com --apply
 ```
 
 Expected: every pre-existing test and result has Roxana's UID; no IDs or slugs change.

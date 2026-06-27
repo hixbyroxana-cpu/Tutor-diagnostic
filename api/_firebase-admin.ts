@@ -2,7 +2,7 @@ import { cert, getApps, initializeApp, type App } from 'firebase-admin/app';
 import { getAuth, type Auth } from 'firebase-admin/auth';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 
-const FIRESTORE_DATABASE_ID = 'ai-studio-1ba9c379-e91f-45ca-b2e0-7aaee16eb4fa';
+export const FIRESTORE_DATABASE_ID = 'ai-studio-1ba9c379-e91f-45ca-b2e0-7aaee16eb4fa';
 
 let app: App | null = null;
 let auth: Auth | null = null;

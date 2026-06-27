@@ -4,14 +4,21 @@ import type {
   Firestore,
   Timestamp,
 } from 'firebase-admin/firestore';
-import { getAdminAuth, getAdminDb } from '../api/_firebase-admin.js';
+import {
+  FIRESTORE_DATABASE_ID,
+  getAdminApp,
+  getAdminAuth,
+  getAdminDb,
+} from '../api/_firebase-admin.js';
 
 const COLLECTIONS = ['tests', 'testResults'] as const;
 const MAX_BATCH_SIZE = 450;
+type CollectionName = typeof COLLECTIONS[number];
+export type MigrationMode = 'dry-run' | 'apply';
 
 export interface MigrationArgs {
   ownerEmail: string;
-  dryRun: boolean;
+  mode: MigrationMode;
 }
 
 export interface MigrationRecord {
@@ -24,9 +31,22 @@ interface LoadedMigrationRecord extends MigrationRecord {
   updateTime: Timestamp;
 }
 
+export interface MigrationDependencies<T extends MigrationRecord> {
+  projectId: string;
+  databaseId: string;
+  getOwnerUid: (email: string) => Promise<string>;
+  readCollection: (collection: CollectionName) => Promise<T[]>;
+  commitOwnerBatch: (
+    collection: CollectionName,
+    records: T[],
+    ownerId: string,
+  ) => Promise<void>;
+  log: (message: string) => void;
+}
+
 export function parseArgs(args: string[]): MigrationArgs {
   const ownerEmails: string[] = [];
-  let dryRun = false;
+  const modes: MigrationMode[] = [];
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -47,8 +67,13 @@ export function parseArgs(args: string[]): MigrationArgs {
       continue;
     }
 
-    if (argument === '--dry-run' && !dryRun) {
-      dryRun = true;
+    if (argument === '--dry-run') {
+      modes.push('dry-run');
+      continue;
+    }
+
+    if (argument === '--apply') {
+      modes.push('apply');
       continue;
     }
 
@@ -59,7 +84,11 @@ export function parseArgs(args: string[]): MigrationArgs {
     throw new Error('Exactly one non-empty --owner-email is required.');
   }
 
-  return { ownerEmail: ownerEmails[0], dryRun };
+  if (modes.length !== 1) {
+    throw new Error('Exactly one mode is required: --dry-run or --apply.');
+  }
+
+  return { ownerEmail: ownerEmails[0], mode: modes[0] };
 }
 
 export function isOwnerless(data: Record<string, unknown>) {
@@ -68,6 +97,15 @@ export function isOwnerless(data: Record<string, unknown>) {
 
 export function selectOwnerless<T extends MigrationRecord>(records: T[]) {
   return records.filter(record => isOwnerless(record.data));
+}
+
+export function findOwnerConflicts<T extends MigrationRecord>(records: T[], ownerId: string) {
+  return records.filter(record => {
+    const existingOwnerId = record.data.ownerId;
+    return typeof existingOwnerId === 'string'
+      && existingOwnerId.trim().length > 0
+      && existingOwnerId !== ownerId;
+  });
 }
 
 export function chunkRecords<T>(records: T[], size = MAX_BATCH_SIZE) {
@@ -82,8 +120,11 @@ export function chunkRecords<T>(records: T[], size = MAX_BATCH_SIZE) {
   return chunks;
 }
 
-export function buildWriteBatches<T extends MigrationRecord>(records: T[], dryRun: boolean) {
-  return dryRun ? [] : chunkRecords(selectOwnerless(records));
+export function buildWriteBatches<T extends MigrationRecord>(
+  records: T[],
+  mode: MigrationMode,
+) {
+  return mode === 'dry-run' ? [] : chunkRecords(selectOwnerless(records));
 }
 
 async function readCollection(db: Firestore, collectionName: string) {
@@ -97,59 +138,104 @@ async function readCollection(db: Firestore, collectionName: string) {
   }));
 }
 
-async function assignOwner(
-  db: Firestore,
-  records: LoadedMigrationRecord[],
-  ownerId: string,
-) {
-  for (const recordsBatch of buildWriteBatches(records, false)) {
-    const batch = db.batch();
-
-    for (const record of recordsBatch) {
-      batch.update(record.ref, { ownerId }, { lastUpdateTime: record.updateTime });
-    }
-
-    await batch.commit();
-  }
+function conflictError(collection: CollectionName, count: number) {
+  const noun = count === 1 ? 'record' : 'records';
+  return new Error(
+    `Migration aborted: found ${count} ${noun} owned by a different UID in ${collection}.`,
+  );
 }
 
-export async function main(args = process.argv.slice(2)) {
-  const { ownerEmail, dryRun } = parseArgs(args);
-  const owner = await getAdminAuth().getUserByEmail(ownerEmail);
-  const db = getAdminDb();
+export async function runMigration<T extends MigrationRecord>(
+  args: MigrationArgs,
+  dependencies: MigrationDependencies<T>,
+) {
+  const ownerId = await dependencies.getOwnerUid(args.ownerEmail);
+  dependencies.log(`Project ID: ${dependencies.projectId}`);
+  dependencies.log(`Firestore database ID: ${dependencies.databaseId}`);
+  dependencies.log(`Owner UID: ${ownerId}`);
+  dependencies.log(`Mode: ${args.mode}`);
 
-  console.log(`Owner UID: ${owner.uid}`);
+  const initialEntries = await Promise.all(COLLECTIONS.map(async collection => [
+    collection,
+    await dependencies.readCollection(collection),
+  ] as const));
+  const initialRecords = new Map<CollectionName, T[]>(initialEntries);
 
-  const before = new Map<string, number>();
-  for (const collectionName of COLLECTIONS) {
-    const records = await readCollection(db, collectionName);
-    const ownerless = selectOwnerless(records);
-    before.set(collectionName, ownerless.length);
-    console.log(`${collectionName}: ${ownerless.length} ownerless before migration.`);
-
-    if (!dryRun) {
-      await assignOwner(db, ownerless, owner.uid);
+  for (const collection of COLLECTIONS) {
+    const conflicts = findOwnerConflicts(initialRecords.get(collection) ?? [], ownerId);
+    if (conflicts.length > 0) {
+      throw conflictError(collection, conflicts.length);
     }
   }
 
-  if (dryRun) {
-    console.log('Dry run complete. No writes performed.');
+  for (const collection of COLLECTIONS) {
+    const records = initialRecords.get(collection) ?? [];
+    dependencies.log(
+      `${collection}: ${selectOwnerless(records).length} ownerless before migration.`,
+    );
+  }
+
+  if (args.mode === 'dry-run') {
+    dependencies.log('Dry run complete. No writes performed.');
     return;
   }
 
+  for (const collection of COLLECTIONS) {
+    const batches = buildWriteBatches(initialRecords.get(collection) ?? [], args.mode);
+    for (const [index, batch] of batches.entries()) {
+      await dependencies.commitOwnerBatch(collection, batch, ownerId);
+      dependencies.log(`${collection} batch ${index + 1}/${batches.length} committed.`);
+    }
+  }
+
+  const finalEntries = await Promise.all(COLLECTIONS.map(async collection => [
+    collection,
+    await dependencies.readCollection(collection),
+  ] as const));
   let remainingOwnerless = 0;
-  for (const collectionName of COLLECTIONS) {
-    const records = await readCollection(db, collectionName);
+  for (const [collection, records] of finalEntries) {
     const afterCount = selectOwnerless(records).length;
     remainingOwnerless += afterCount;
-    console.log(
-      `${collectionName}: ${before.get(collectionName) ?? 0} ownerless before, ${afterCount} after migration.`,
+    dependencies.log(
+      `${collection}: ${selectOwnerless(initialRecords.get(collection) ?? []).length} ownerless before, ${afterCount} after migration.`,
     );
+
+    const conflicts = findOwnerConflicts(records, ownerId);
+    if (conflicts.length > 0) {
+      throw conflictError(collection, conflicts.length);
+    }
   }
 
   if (remainingOwnerless > 0) {
     throw new Error(`Migration incomplete: ${remainingOwnerless} ownerless records remain.`);
   }
+}
+
+export async function main(args = process.argv.slice(2)) {
+  const parsedArgs = parseArgs(args);
+  const app = getAdminApp();
+  const projectId = app.options.projectId;
+  if (!projectId) {
+    throw new Error('Firebase Admin project ID is unavailable.');
+  }
+
+  const auth = getAdminAuth();
+  const db = getAdminDb();
+
+  await runMigration(parsedArgs, {
+    projectId,
+    databaseId: FIRESTORE_DATABASE_ID,
+    getOwnerUid: async email => (await auth.getUserByEmail(email)).uid,
+    readCollection: collection => readCollection(db, collection),
+    commitOwnerBatch: async (_collection, records, ownerId) => {
+      const batch = db.batch();
+      for (const record of records) {
+        batch.update(record.ref, { ownerId }, { lastUpdateTime: record.updateTime });
+      }
+      await batch.commit();
+    },
+    log: message => console.log(message),
+  });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

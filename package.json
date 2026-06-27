@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --exclude firestore.rules.test.ts",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-tutor-rules \"vitest run firestore.rules.test.ts\""
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
@@ -36,9 +37,11 @@
     "vite": "^6.2.0"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
+    "firebase-tools": "^15.22.3",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",

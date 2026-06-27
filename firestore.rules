@@ -22,8 +22,8 @@ service cloud.firestore {
     match /testResults/{resultId} {
       allow read: if ownsExisting();
       allow update: if ownsExisting()
-        && ownsIncoming()
-        && request.resource.data.ownerId == resource.data.ownerId;
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['parentSummary']);
       allow create, delete: if false;
     }
 

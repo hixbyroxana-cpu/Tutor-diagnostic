@@ -1,7 +1,15 @@
 # Firestore Rules Emulator Verification Cases
 
-These cases define the emulator verification matrix. They do not claim that
-Firestore Emulator tests have run.
+The executable suite is `firestore.rules.test.ts`. Run it with:
+
+```bash
+npm run test:rules
+```
+
+The command starts the Firestore Emulator against the named database
+configuration in `firebase.json`, runs the suite, and then stops the emulator.
+The matrix below remains the expected coverage; this document does not claim
+the suite passed in any particular environment.
 
 Use two authenticated users, `tutor-a` and `tutor-b`, plus an unauthenticated
 client. Seed fixtures through the Admin SDK so setup bypasses client rules.
@@ -17,9 +25,11 @@ client. Seed fixtures through the Admin SDK so setup bypasses client rules.
 | `tests`: update owner transfer | `tutor-a`, existing `ownerId: "tutor-a"`, incoming `ownerId: "tutor-b"` | Deny |
 | `tests`: any operation | Unauthenticated | Deny |
 | `testResults`: get/list | `tutor-a`, existing `ownerId: "tutor-a"` | Allow |
-| `testResults`: update | `tutor-a`, existing and incoming `ownerId: "tutor-a"` | Allow |
+| `testResults`: update `parentSummary` only | `tutor-a`, existing `ownerId: "tutor-a"` | Allow |
 | `testResults`: get/update | `tutor-b`, existing `ownerId: "tutor-a"` | Deny |
 | `testResults`: update owner transfer | `tutor-a`, existing `ownerId: "tutor-a"`, incoming `ownerId: "tutor-b"` | Deny |
+| `testResults`: update score, answers, student details, timestamps, or notification state | `tutor-a`, existing `ownerId: "tutor-a"` | Deny |
+| `testResults`: update `parentSummary` plus any other field | `tutor-a`, existing `ownerId: "tutor-a"` | Deny |
 | `testResults`: create/delete | Any browser client, including the owner | Deny |
 | `testResults`: any operation | Unauthenticated | Deny |
 | `tutors/tutor-a`: get | `tutor-a` | Allow |
