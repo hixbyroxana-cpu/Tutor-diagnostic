@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add private tutor accounts, per-tutor test ownership, editable starter tests, and automatic Diagnostic Click PDF report emails without breaking any existing Vercel test link or current data.
+**Goal:** Add private tutor accounts, per-tutor test ownership, editable starter tests, and automatic completion emails linking tutors to the exact result without breaking any existing Vercel test link or current data.
 
 **Architecture:** Firebase Authentication handles email/password and Google sign-in. Vercel Functions use Firebase Admin for trusted profile provisioning, public test loading, server-side marking, result storage, and Resend email delivery. A staged rollout flag keeps the current dashboard available until Roxana's account exists, all records are migrated, and ownership has been verified.
 
@@ -17,7 +17,7 @@ Do not combine these gates into one production deployment:
 1. **Compatibility release:** deploy authentication UI and server APIs with `VITE_AUTH_REQUIRED=false`. Keep current Firestore rules and both domains working.
 2. **Owner setup:** create `roxana.scurtu@yahoo.com`, capture its Firebase UID, run the migration, and verify every existing test/result is visible.
 3. **Security release:** deploy private Firestore rules and set `VITE_AUTH_REQUIRED=true`.
-4. **Email release:** verify `mail.diagnostic.click`, add Resend environment variables, and enable report notifications.
+4. **Email release:** verify `mail.diagnostic.click`, add Resend environment variables, and enable completion notifications.
 
 At every gate, smoke-test `https://tutor-diagnostic.vercel.app/test/gcse-foundation-overall-revision` before proceeding.
 
@@ -683,7 +683,7 @@ if (existing.exists) {
 await resultRef.create(result);
 ```
 
-Email is added in Task 8. For now return `{ resultId }`.
+Email is added in Task 7. For now return `{ resultId }`.
 
 - [ ] **Step 6: Update the public runner**
 
@@ -800,97 +800,14 @@ git add src/lib/tutor-query.ts src/lib/tutor-query.test.ts src/pages .env.exampl
 git commit -m "Scope dashboard data to tutors"
 ```
 
-### Task 7: Refactor the Diagnostic PDF into Shared Bytes
-
-**Files:**
-- Modify: `src/lib/pdf.ts`
-- Create: `src/lib/pdf-bytes.test.ts`
-
-- [ ] **Step 1: Write the failing PDF-byte test**
-
-Create `src/lib/pdf-bytes.test.ts`:
-
-```ts
-import { describe, expect, it } from 'vitest';
-import { buildDiagnosticReportPdfBytes } from './pdf';
-
-it('builds a valid diagnostic PDF byte sequence', () => {
-  const bytes = buildDiagnosticReportPdfBytes({
-    studentFullName: 'Roxana Scurtu',
-    testLevel: '11+',
-    testTitle: '11+ Diagnostic',
-    score: 6,
-    totalQuestions: 20,
-    percentage: 30,
-    completedAt: 1000,
-    topicBreakdown: [],
-    suggestedTargets: ['Practise place value.'],
-  } as any);
-
-  expect(new TextDecoder().decode(bytes.slice(0, 8))).toContain('%PDF-1.');
-  expect(bytes.length).toBeGreaterThan(500);
-});
-```
-
-- [ ] **Step 2: Run the failing test**
-
-Run:
-
-```bash
-npm test -- src/lib/pdf-bytes.test.ts
-```
-
-Expected: FAIL because `buildDiagnosticReportPdfBytes` is not exported.
-
-- [ ] **Step 3: Export pure PDF bytes**
-
-Refactor `src/lib/pdf.ts`:
-
-```ts
-function binaryStringToBytes(value: string) {
-  return Uint8Array.from(value, char => char.charCodeAt(0));
-}
-
-export function buildDiagnosticReportPdfBytes(result: TestResult) {
-  return binaryStringToBytes(buildPdfFromPages(buildDiagnosticReportDashboardPdf(result)));
-}
-
-export function downloadDiagnosticReportPdf(result: TestResult) {
-  const blob = new Blob([buildDiagnosticReportPdfBytes(result)], { type: 'application/pdf' });
-  downloadBlob(blob, `${cleanFilename(result.studentFullName)}-diagnostic-report.pdf`);
-}
-```
-
-Keep the visual layout and filename unchanged.
-
-- [ ] **Step 4: Run tests and inspect a rendered sample**
-
-Run:
-
-```bash
-npm test -- src/lib/pdf-bytes.test.ts
-npm run lint
-npm run build
-```
-
-Generate a sample PDF with `npx tsx`, render it with Quick Look or Poppler, and compare it to `/Users/roxanasc/Desktop/roxana-scurtu-diagnostic-report.pdf`.
-
-Expected: valid PDF, same report sections, no clipped content.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/lib/pdf.ts src/lib/pdf-bytes.test.ts
-git commit -m "Share diagnostic PDF generation"
-```
-
-### Task 8: Email the Owning Tutor with the PDF Attachment
+### Task 7: Email the Owning Tutor with a Secure Result Link
 
 **Files:**
 - Create: `api/_email.ts`
 - Create: `api/_email.test.ts`
+- Create: `api/public/result-notification.ts`
+- Create: `api/public/result-notification.test.ts`
 - Modify: `api/public/submit-result.ts`
-- Modify: `src/types.ts`
 
 - [ ] **Step 1: Write the failing email payload test**
 
@@ -900,18 +817,45 @@ Create `api/_email.test.ts`:
 import { describe, expect, it } from 'vitest';
 import { buildResultEmail } from './_email';
 
-it('addresses the tutor and attaches the diagnostic PDF', () => {
-  const email = buildResultEmail(
-    { email: 'tutor@example.com', displayName: 'Tutor' },
-    { id: 'result-1', studentFullName: 'Sam Lee', testTitle: '11+', score: 8, totalQuestions: 10, percentage: 80 } as any,
-    new Uint8Array([37, 80, 68, 70]),
-    'https://diagnostic.click',
-  );
+describe('buildResultEmail', () => {
+  it('notifies the owning tutor with the exact result link and no report data', () => {
+    const email = buildResultEmail({
+      from: 'Diagnostic Click <reports@mail.diagnostic.click>',
+      tutor: { email: 'tutor@example.com', displayName: 'Tutor' },
+      result: {
+        studentFullName: 'Sam Lee',
+        testTitle: '11+ Diagnostic',
+        completedAt: Date.UTC(2026, 5, 27, 12, 30),
+      },
+      resultId: 'result-1',
+      appBaseUrl: 'https://diagnostic.click/',
+    });
 
-  expect(email.to).toEqual(['tutor@example.com']);
-  expect(email.subject).toContain('Sam Lee');
-  expect(email.attachments[0].filename).toBe('sam-lee-diagnostic-report.pdf');
-  expect(email.html).toContain('https://diagnostic.click/results/result-1');
+    expect(email.to).toEqual(['tutor@example.com']);
+    expect(email.subject).toContain('Sam Lee');
+    expect(email.html).toContain('11+ Diagnostic');
+    expect(email.html).toContain('https://diagnostic.click/results/result-1');
+    expect(email.html).not.toMatch(/score|percentage/i);
+    expect(email).not.toHaveProperty('attachments');
+  });
+
+  it('escapes student and test names before inserting them into HTML', () => {
+    const email = buildResultEmail({
+      from: 'Diagnostic Click <reports@mail.diagnostic.click>',
+      tutor: { email: 'tutor@example.com', displayName: 'Tutor' },
+      result: {
+        studentFullName: '<Sam & Lee>',
+        testTitle: '"11+" <script>',
+        completedAt: 0,
+      },
+      resultId: 'result/1',
+      appBaseUrl: 'https://diagnostic.click',
+    });
+
+    expect(email.html).not.toContain('<script>');
+    expect(email.html).toContain('&lt;Sam &amp; Lee&gt;');
+    expect(email.html).toContain('/results/result%2F1');
+  });
 });
 ```
 
@@ -925,73 +869,375 @@ npm test -- api/_email.test.ts
 
 Expected: FAIL because `api/_email.ts` does not exist.
 
-- [ ] **Step 3: Build the email payload and sender**
+- [ ] **Step 3: Build the safe email payload**
 
 Create `api/_email.ts`:
 
 ```ts
 import { Resend } from 'resend';
-import { buildDiagnosticReportPdfBytes } from '../src/lib/pdf.js';
+import type { TestResult, TutorProfile } from '../src/types.js';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+type TutorRecipient = Pick<TutorProfile, 'email' | 'displayName'>;
+type CompletedResult = Pick<TestResult, 'studentFullName' | 'testTitle' | 'completedAt'>;
 
-export function buildResultEmail(tutor, result, pdfBytes, appBaseUrl) {
-  const filename = `${result.studentFullName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-diagnostic-report.pdf`;
+interface ResultEmailInput {
+  from: string;
+  tutor: TutorRecipient;
+  result: CompletedResult;
+  resultId: string;
+  appBaseUrl: string;
+}
+
+const HTML_ENTITIES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, character => HTML_ENTITIES[character]);
+}
+
+function singleLine(value: string) {
+  return value.replace(/[\r\n]+/g, ' ').trim();
+}
+
+export function buildResultEmail(input: ResultEmailInput) {
+  const baseUrl = input.appBaseUrl.replace(/\/+$/, '');
+  const resultUrl = `${baseUrl}/results/${encodeURIComponent(input.resultId)}`;
+  const studentName = escapeHtml(input.result.studentFullName);
+  const testTitle = escapeHtml(input.result.testTitle);
+  const completionDate = new Intl.DateTimeFormat('en-GB', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Europe/London',
+  }).format(new Date(input.result.completedAt));
+
   return {
-    from: process.env.EMAIL_FROM!,
-    to: [tutor.email],
-    subject: `Diagnostic completed: ${result.studentFullName}`,
-    html: `<p>${result.studentFullName} completed ${result.testTitle}.</p>
-      <p><strong>Score:</strong> ${result.score}/${result.totalQuestions} (${result.percentage}%)</p>
-      <p><a href="${appBaseUrl}/results/${result.id}">Review the full result</a></p>`,
-    attachments: [{ filename, content: Buffer.from(pdfBytes) }],
+    from: input.from,
+    to: [input.tutor.email],
+    subject: `Diagnostic completed: ${singleLine(input.result.studentFullName)}`,
+    html: `<p>${studentName} completed ${testTitle} on ${completionDate}.</p>
+      <p><a href="${resultUrl}">View completed result</a></p>`,
+    text: `${input.result.studentFullName} completed ${input.result.testTitle} on ${completionDate}.\n\nView completed result: ${resultUrl}`,
   };
 }
 
-export async function sendResultEmail(tutor, result) {
-  const payload = buildResultEmail(
-    tutor,
-    result,
-    buildDiagnosticReportPdfBytes(result),
-    process.env.APP_BASE_URL || 'https://diagnostic.click',
+export function notificationsConfigured() {
+  return Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
+}
+
+export async function sendResultEmail(
+  tutor: TutorRecipient,
+  result: CompletedResult,
+  resultId: string,
+) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM;
+  if (!apiKey || !from) {
+    throw new Error('Result email is not configured.');
+  }
+
+  const resend = new Resend(apiKey);
+  const response = await resend.emails.send(
+    buildResultEmail({
+      from,
+      tutor,
+      result,
+      resultId,
+      appBaseUrl: process.env.APP_BASE_URL || 'https://diagnostic.click',
+    }),
+    { idempotencyKey: `result-completed/${resultId}` },
   );
-  return resend.emails.send(payload, {
-    headers: { 'Idempotency-Key': `result-completed-${result.id}` },
-  });
+
+  if (response.error) {
+    throw new Error(`Resend failed: ${response.error.message}`);
+  }
+
+  return response.data;
 }
 ```
 
-- [ ] **Step 4: Send after durable result storage**
+The payload deliberately contains no score, percentage, answer data, or attachment. The result ID is encoded before it enters the URL, and student-controlled text is HTML-escaped.
 
-In `api/public/submit-result.ts`:
+- [ ] **Step 4: Write failing notification-state tests**
 
-1. Save the result with `notificationStatus: 'pending'`.
-2. Read `tutors/{ownerId}`.
-3. Call `sendResultEmail`.
-4. Update status to `sent` and `notificationSentAt`.
-5. On failure, update status to `failed` and a bounded safe error string.
-6. Still return success to the student because their result is already saved.
+Extend `api/_email.test.ts`:
 
-- [ ] **Step 5: Run checks**
+```ts
+import {
+  failedNotificationUpdate,
+  sentNotificationUpdate,
+} from './_email';
+
+it('builds bounded notification status updates', () => {
+  expect(sentNotificationUpdate(1234)).toEqual({
+    notificationStatus: 'sent',
+    notificationSentAt: 1234,
+    notificationError: '',
+  });
+
+  const failed = failedNotificationUpdate(new Error('x'.repeat(1_000)));
+  expect(failed.notificationStatus).toBe('failed');
+  expect(failed.notificationError.length).toBeLessThanOrEqual(300);
+});
+```
+
+- [ ] **Step 5: Run the notification-state test to verify it fails**
 
 Run:
 
 ```bash
 npm test -- api/_email.test.ts
+```
+
+Expected: FAIL because the status-update helpers are not exported.
+
+- [ ] **Step 6: Implement bounded notification updates**
+
+Add to `api/_email.ts`:
+
+```ts
+export function sentNotificationUpdate(notificationSentAt: number) {
+  return {
+    notificationStatus: 'sent' as const,
+    notificationSentAt,
+    notificationError: '',
+  };
+}
+
+export function failedNotificationUpdate(error: unknown) {
+  const message = error instanceof Error ? error.message : 'Unknown email delivery error.';
+  return {
+    notificationStatus: 'failed' as const,
+    notificationError: message.slice(0, 300),
+  };
+}
+```
+
+- [ ] **Step 7: Write failing delivery-orchestration tests**
+
+Create `api/public/result-notification.test.ts`:
+
+```ts
+import { describe, expect, it, vi } from 'vitest';
+import { notifyTutorOfResult } from './result-notification';
+
+const result = {
+  ownerId: 'tutor-1',
+  studentFullName: 'Sam Lee',
+  testTitle: '11+ Diagnostic',
+  completedAt: 123,
+};
+
+describe('notifyTutorOfResult', () => {
+  it('emails the owning tutor and records sent status', async () => {
+    const send = vi.fn().mockResolvedValue({ id: 'email-1' });
+    const update = vi.fn().mockResolvedValue(undefined);
+
+    await notifyTutorOfResult(
+      { enabled: true, resultId: 'result-1', result },
+      {
+        loadTutor: vi.fn().mockResolvedValue({
+          email: 'tutor@example.com',
+          displayName: 'Tutor',
+        }),
+        send,
+        update,
+        now: () => 456,
+        log: vi.fn(),
+      },
+    );
+
+    expect(send).toHaveBeenCalledWith(
+      { email: 'tutor@example.com', displayName: 'Tutor' },
+      result,
+      'result-1',
+    );
+    expect(update).toHaveBeenCalledWith({
+      notificationStatus: 'sent',
+      notificationSentAt: 456,
+      notificationError: '',
+    });
+  });
+
+  it('records failure without rejecting the saved submission', async () => {
+    const update = vi.fn().mockResolvedValue(undefined);
+
+    await expect(notifyTutorOfResult(
+      { enabled: true, resultId: 'result-1', result },
+      {
+        loadTutor: vi.fn().mockResolvedValue({
+          email: 'tutor@example.com',
+          displayName: 'Tutor',
+        }),
+        send: vi.fn().mockRejectedValue(new Error('provider unavailable')),
+        update,
+        now: () => 456,
+        log: vi.fn(),
+      },
+    )).resolves.toBeUndefined();
+
+    expect(update).toHaveBeenCalledWith({
+      notificationStatus: 'failed',
+      notificationError: 'provider unavailable',
+    });
+  });
+
+  it('does nothing when notifications are not configured', async () => {
+    const loadTutor = vi.fn();
+
+    await notifyTutorOfResult(
+      { enabled: false, resultId: 'result-1', result },
+      {
+        loadTutor,
+        send: vi.fn(),
+        update: vi.fn(),
+        now: () => 456,
+        log: vi.fn(),
+      },
+    );
+
+    expect(loadTutor).not.toHaveBeenCalled();
+  });
+});
+```
+
+- [ ] **Step 8: Run the delivery test to verify it fails**
+
+Run:
+
+```bash
+npm test -- api/public/result-notification.test.ts
+```
+
+Expected: FAIL because `api/public/result-notification.ts` does not exist.
+
+- [ ] **Step 9: Implement isolated delivery orchestration**
+
+Create `api/public/result-notification.ts`:
+
+```ts
+import type { TestResult, TutorProfile } from '../../src/types.js';
+import {
+  failedNotificationUpdate,
+  sentNotificationUpdate,
+} from '../_email.js';
+
+type TutorRecipient = Pick<TutorProfile, 'email' | 'displayName'>;
+type CompletedResult = Pick<
+  TestResult,
+  'ownerId' | 'studentFullName' | 'testTitle' | 'completedAt'
+>;
+
+interface NotificationInput {
+  enabled: boolean;
+  resultId: string;
+  result: CompletedResult;
+}
+
+interface NotificationDependencies {
+  loadTutor(ownerId: string): Promise<TutorRecipient | null>;
+  send(
+    tutor: TutorRecipient,
+    result: CompletedResult,
+    resultId: string,
+  ): Promise<unknown>;
+  update(fields: Record<string, unknown>): Promise<unknown>;
+  now(): number;
+  log(message: string, error: unknown): void;
+}
+
+export async function notifyTutorOfResult(
+  input: NotificationInput,
+  dependencies: NotificationDependencies,
+) {
+  if (!input.enabled) return;
+
+  try {
+    if (!input.result.ownerId) {
+      throw new Error('The completed test has no tutor owner.');
+    }
+
+    const tutor = await dependencies.loadTutor(input.result.ownerId);
+    if (!tutor?.email) {
+      throw new Error('The owning tutor profile has no notification email.');
+    }
+
+    await dependencies.send(tutor, input.result, input.resultId);
+  } catch (error) {
+    try {
+      await dependencies.update(failedNotificationUpdate(error));
+    } catch (statusError) {
+      dependencies.log('Result email failure status could not be saved.', statusError);
+    }
+    return;
+  }
+
+  try {
+    await dependencies.update(sentNotificationUpdate(dependencies.now()));
+  } catch (statusError) {
+    dependencies.log('Result email sent but its status could not be saved.', statusError);
+  }
+}
+```
+
+- [ ] **Step 10: Wire delivery after durable result storage**
+
+In `api/public/submit-result.ts`, after `resultRef.create(result)` succeeds:
+
+```ts
+await notifyTutorOfResult(
+  {
+    enabled: notificationsConfigured(),
+    resultId: resultRef.id,
+    result,
+  },
+  {
+    async loadTutor(ownerId) {
+      const tutorSnapshot = await db.collection('tutors').doc(ownerId).get();
+      const tutor = tutorSnapshot.data();
+      if (!tutorSnapshot.exists || typeof tutor?.email !== 'string') return null;
+      return {
+        email: tutor.email,
+        displayName: typeof tutor.displayName === 'string' ? tutor.displayName : tutor.email,
+      };
+    },
+    send: sendResultEmail,
+    update: fields => resultRef.update(fields),
+    now: Date.now,
+    log: (message, error) => console.error(message, error),
+  },
+);
+```
+
+Import `notificationsConfigured` and `sendResultEmail` from `../_email.js`, and `notifyTutorOfResult` from `./result-notification.js`.
+
+Do not attempt email before the result exists. When email is not configured during the compatibility release, leave `notificationStatus` as `pending`. Delivery and status-update failures are contained inside `notifyTutorOfResult`, so the handler still returns `{ resultId }` to the student.
+
+- [ ] **Step 11: Run focused and full checks**
+
+Run:
+
+```bash
+npm test -- api/_email.test.ts api/public/result-notification.test.ts api/public/submit-result.test.ts
+npm test
 npm run lint
 npm run build
 ```
 
-Expected: all exit 0.
+Expected: all exit 0. The existing browser PDF implementation and tests remain unchanged.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
-git add api/_email.ts api/_email.test.ts api/public/submit-result.ts src/types.ts
-git commit -m "Email completed diagnostic reports"
+git add api/_email.ts api/_email.test.ts api/public/result-notification.ts api/public/result-notification.test.ts api/public/submit-result.ts
+git commit -m "Email tutors when diagnostics complete"
 ```
 
-### Task 9: Add Migration Script and Private Firestore Rules
+### Task 8: Add Migration Script and Private Firestore Rules
 
 **Files:**
 - Create: `scripts/migrate-existing-owner.ts`
@@ -1087,7 +1333,7 @@ git commit -m "Prepare tutor data migration and rules"
 
 Do not deploy the new rules in this task.
 
-### Task 10: Compatibility Release and Owner Migration
+### Task 9: Compatibility Release and Owner Migration
 
 **Files:**
 - Modify: Vercel environment only
@@ -1187,7 +1433,7 @@ Sign in as Roxana and compare:
 
 Stop rollout if any record is missing.
 
-### Task 11: Security and Email Release
+### Task 10: Security and Email Release
 
 **Files:**
 - Modify: Vercel environment only
@@ -1220,23 +1466,25 @@ Deploy a new production build. Do not redeploy a prebuilt deployment.
 
 - [ ] **Step 4: Deploy private Firestore rules**
 
-Deploy `firestore.rules` only after Task 10 confirms Roxana owns every existing record and can see them.
+Deploy `firestore.rules` only after Task 9 confirms Roxana owns every existing record and can see them.
 
 - [ ] **Step 5: Run end-to-end verification with a disposable test**
 
-Create a new tutor-owned test titled `Notification Smoke Test`, copy its exact generated slug from the Tests page, and submit it once through each copied link:
+Create a new tutor-owned test titled `Notification Smoke Test`, copy its exact generated slug from the Tests page, and complete it once through the Diagnostic Click URL. Then open the same slug on the Vercel origin to verify backward compatibility without creating another submission:
 
 1. Copy the Diagnostic Click URL from the Tests page.
 2. Open the same slug by replacing only the origin with `https://tutor-diagnostic.vercel.app`.
 
 Expected:
 
-- One result per unique submission ID.
+- The Diagnostic Click submission creates one result.
 - Result belongs to the tutor.
 - Tutor receives one Diagnostic Click email.
-- Email contains the correct score and PDF attachment.
-- PDF opens without login.
-- Dashboard link requires login and returns to the correct result.
+- Email contains the student name, test title, completion date, and no score or attachment.
+- The email button links to the exact completed result.
+- The result link requires login and returns to the correct result.
+- The Vercel-origin test intro still loads the same test.
+- The existing dashboard PDF download still works after login.
 
 - [ ] **Step 6: Verify account isolation**
 
