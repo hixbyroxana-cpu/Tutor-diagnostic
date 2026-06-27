@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add secure tutor accounts and notify the tutor who owns a test whenever a student completes it. The notification email will include the generated diagnostic report PDF as an attachment and a secure link to the full result in the tutor dashboard.
+Add secure tutor accounts and notify the tutor who owns a test whenever a student completes it. The notification email will identify the student and test and include a secure link to the completed result in the tutor dashboard. It will not include a PDF attachment or result score.
 
 Stripe subscriptions and trial enforcement are deliberately excluded from this phase. The ownership model introduced here will support billing later without restructuring tests or results.
 
@@ -68,9 +68,8 @@ Instead, the student submission page sends the completed answers to a Vercel ser
 3. Calculates the result server-side.
 4. Copies the test's `ownerId` onto the result.
 5. Saves the result.
-6. Generates the diagnostic report PDF.
-7. Emails the owning tutor.
-8. Returns a successful completion response to the student.
+6. Emails the owning tutor with a secure link to the completed result.
+7. Returns a successful completion response to the student.
 
 This prevents a student from choosing another tutor as the recipient or modifying their calculated score before storage.
 
@@ -131,29 +130,21 @@ The `mail.diagnostic.click` sending subdomain will be verified in Resend. The ap
 The completion email is sent only to the owning tutor's verified account email. It contains:
 
 - Student name
-- Test title and level
-- Score and percentage
+- Test title
 - Completion date
-- Attached diagnostic report PDF
-- Secure link to the result dashboard
+- A secure link to the exact completed result
 
 The student or parent receives no automatic report email in this phase.
 
-The attachment will match the existing Diagnostic Click report design: score metrics, strengths, and learning targets. It does not wait for the optional AI parent summary.
+The email contains no PDF attachment and does not expose the student's score. The tutor must sign in to Diagnostic Click to view the result.
 
 Email sending uses an idempotency key based on the result ID so retries do not send duplicate notifications.
 
 If email delivery fails, the completed result remains saved. The endpoint logs the failure and records notification status on the result so the tutor can still find it and a retry can be added later.
 
-## PDF Generation
+## Existing PDF Downloads
 
-The current PDF layout logic will be separated into:
-
-- A pure function that returns PDF bytes
-- A browser download wrapper
-- A server email attachment wrapper
-
-Both dashboard downloads and email attachments will use the same PDF byte generator. This keeps the emailed report visually identical to the report tutors can download from the result page.
+The existing browser-generated diagnostic PDF remains available from the authenticated result page. Its layout and download behavior are unchanged. Server-side PDF generation and email attachments are outside this phase.
 
 ## Dashboard Experience
 
@@ -167,8 +158,6 @@ The top navigation shows:
 Tests, dashboard metrics, and results are filtered by the authenticated tutor's `ownerId`.
 
 The result link in an email opens the relevant result after authentication. If the tutor is signed out, Diagnostic Click sends them to sign in and then returns them to that result.
-
-The attached PDF can be opened directly from the email without signing in.
 
 ## Domain Setup
 
@@ -192,7 +181,7 @@ DNS responsibilities:
 - Template provisioning retries safely without duplicates.
 - Invalid or inactive public test slugs return an unavailable message.
 - Result submission cannot succeed twice from repeated client retries without detecting the duplicate.
-- PDF or email failures do not discard a valid result.
+- Email failures do not discard a valid result.
 - Notification state is stored as `pending`, `sent`, or `failed`, with a timestamp and safe error summary.
 
 ## Verification
@@ -206,14 +195,16 @@ Implementation verification must cover:
 5. Public access to an active student test.
 6. Server-side result calculation and ownership.
 7. Result visibility only to the owning tutor.
-8. PDF attachment equality with the dashboard report format.
-9. Completion email addressed to the owning tutor.
+8. Completion email addressed to the owning tutor with the correct student name, test title, completion date, and exact result link.
+9. Completion email contains no score or PDF attachment.
 10. No duplicate email on a retried submission.
-11. Existing data assigned to Roxana after migration.
-12. Roxana can see all pre-existing tests and reports before access restrictions are enabled.
-13. Previously issued `tutor-diagnostic.vercel.app/test/...` links still load and submit successfully.
-14. Both application domains point to the same production deployment and database.
-15. Production domain, Firebase authorized domains, and Resend DNS configuration.
+11. The emailed result link requires authentication and is visible only to the owning tutor.
+12. Existing dashboard PDF downloads remain unchanged.
+13. Existing data assigned to Roxana after migration.
+14. Roxana can see all pre-existing tests and reports before access restrictions are enabled.
+15. Previously issued `tutor-diagnostic.vercel.app/test/...` links still load and submit successfully.
+16. Both application domains point to the same production deployment and database.
+17. Production domain, Firebase authorized domains, and Resend DNS configuration.
 
 ## Later Billing Phase
 
