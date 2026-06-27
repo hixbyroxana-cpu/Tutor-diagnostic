@@ -16,7 +16,9 @@ client. Seed fixtures through the Admin SDK so setup bypasses client rules.
 
 | Collection and operation | Auth/data setup | Expected |
 | --- | --- | --- |
-| `tests`: get/list | `tutor-a`, existing `ownerId: "tutor-a"` | Allow |
+| `tests`: get | `tutor-a`, existing `ownerId: "tutor-a"` | Allow |
+| `tests`: query by `ownerId: "tutor-a"`, ordered by `createdAt` | `tutor-a` | Allow; return only Tutor A records |
+| `tests`: unfiltered query or query by `ownerId: "tutor-b"` | `tutor-a` | Deny |
 | `tests`: create | `tutor-a`, incoming `ownerId: "tutor-a"` | Allow |
 | `tests`: update | `tutor-a`, existing and incoming `ownerId: "tutor-a"` | Allow |
 | `tests`: delete | `tutor-a`, existing `ownerId: "tutor-a"` | Allow |
@@ -24,7 +26,9 @@ client. Seed fixtures through the Admin SDK so setup bypasses client rules.
 | `tests`: create | `tutor-b`, incoming `ownerId: "tutor-a"` | Deny |
 | `tests`: update owner transfer | `tutor-a`, existing `ownerId: "tutor-a"`, incoming `ownerId: "tutor-b"` | Deny |
 | `tests`: any operation | Unauthenticated | Deny |
-| `testResults`: get/list | `tutor-a`, existing `ownerId: "tutor-a"` | Allow |
+| `testResults`: get | `tutor-a`, existing `ownerId: "tutor-a"` | Allow |
+| `testResults`: query by `ownerId: "tutor-a"`, ordered by `completedAt` | `tutor-a` | Allow; return only Tutor A records |
+| `testResults`: unfiltered query or query by `ownerId: "tutor-b"` | `tutor-a` | Deny |
 | `testResults`: update `parentSummary` only | `tutor-a`, existing `ownerId: "tutor-a"` | Allow |
 | `testResults`: get/update | `tutor-b`, existing `ownerId: "tutor-a"` | Deny |
 | `testResults`: update owner transfer | `tutor-a`, existing `ownerId: "tutor-a"`, incoming `ownerId: "tutor-b"` | Deny |

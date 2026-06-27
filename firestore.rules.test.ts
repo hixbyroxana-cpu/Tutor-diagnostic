@@ -14,19 +14,25 @@ import {
   type FirebaseApp,
 } from 'firebase/app';
 import {
+  collection,
   connectFirestoreEmulator,
   deleteDoc,
   doc,
   getFirestore,
   getDoc,
+  getDocs,
+  orderBy,
+  query,
   setDoc,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import {
   afterAll,
   beforeAll,
   beforeEach,
   describe,
+  expect,
   it,
 } from 'vitest';
 import { FIRESTORE_DATABASE_ID } from './api/_firebase-admin.js';
@@ -60,10 +66,17 @@ beforeEach(async () => {
     db.doc('tests/owned-test').set({
       ownerId: 'tutor-a',
       title: 'Owned test',
+      createdAt: 1_765_000_000_000,
     }),
     db.doc('tests/other-test').set({
       ownerId: 'tutor-b',
       title: 'Other test',
+      createdAt: 1_764_000_000_000,
+    }),
+    db.doc('tests/owned-test-older').set({
+      ownerId: 'tutor-a',
+      title: 'Older owned test',
+      createdAt: 1_763_000_000_000,
     }),
     db.doc('testResults/owned-result').set({
       ownerId: 'tutor-a',
@@ -72,6 +85,20 @@ beforeEach(async () => {
       answers: [{ questionId: 'q1', answer: 'A' }],
       studentName: 'Student',
       completedAt: 1_765_000_000_000,
+      notificationStatus: 'sent',
+    }),
+    db.doc('testResults/other-result').set({
+      ownerId: 'tutor-b',
+      parentSummary: 'Other summary',
+      score: 7,
+      completedAt: 1_764_000_000_000,
+      notificationStatus: 'sent',
+    }),
+    db.doc('testResults/owned-result-older').set({
+      ownerId: 'tutor-a',
+      parentSummary: 'Older owned summary',
+      score: 6,
+      completedAt: 1_763_000_000_000,
       notificationStatus: 'sent',
     }),
     db.doc('tutors/tutor-a').set({
@@ -136,6 +163,66 @@ describe('tests rules', () => {
     const db = clientDb('tutor-a');
 
     await assertFails(updateDoc(doc(db, 'tests/owned-test'), { ownerId: 'tutor-b' }));
+  });
+});
+
+describe('production list query rules', () => {
+  it('permits Tutor A tests query and returns only Tutor A records', async () => {
+    const db = clientDb('tutor-a');
+    const ownerQuery = query(
+      collection(db, 'tests'),
+      where('ownerId', '==', 'tutor-a'),
+      orderBy('createdAt', 'desc'),
+    );
+
+    const snapshot = await assertSucceeds(getDocs(ownerQuery));
+
+    expect(snapshot.docs.map(document => document.id)).toEqual([
+      'owned-test',
+      'owned-test-older',
+    ]);
+    expect(snapshot.docs.every(document => document.data().ownerId === 'tutor-a')).toBe(true);
+  });
+
+  it('permits Tutor A results query and returns only Tutor A records', async () => {
+    const db = clientDb('tutor-a');
+    const ownerQuery = query(
+      collection(db, 'testResults'),
+      where('ownerId', '==', 'tutor-a'),
+      orderBy('completedAt', 'desc'),
+    );
+
+    const snapshot = await assertSucceeds(getDocs(ownerQuery));
+
+    expect(snapshot.docs.map(document => document.id)).toEqual([
+      'owned-result',
+      'owned-result-older',
+    ]);
+    expect(snapshot.docs.every(document => document.data().ownerId === 'tutor-a')).toBe(true);
+  });
+
+  it('denies unfiltered tests and results queries', async () => {
+    const db = clientDb('tutor-a');
+
+    await assertFails(getDocs(query(collection(db, 'tests'), orderBy('createdAt', 'desc'))));
+    await assertFails(
+      getDocs(query(collection(db, 'testResults'), orderBy('completedAt', 'desc'))),
+    );
+  });
+
+  it('denies Tutor A querying Tutor B tests and results', async () => {
+    const db = clientDb('tutor-a');
+
+    await assertFails(getDocs(query(
+      collection(db, 'tests'),
+      where('ownerId', '==', 'tutor-b'),
+      orderBy('createdAt', 'desc'),
+    )));
+    await assertFails(getDocs(query(
+      collection(db, 'testResults'),
+      where('ownerId', '==', 'tutor-b'),
+      orderBy('completedAt', 'desc'),
+    )));
   });
 });
 

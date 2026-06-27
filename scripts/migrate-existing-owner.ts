@@ -128,7 +128,7 @@ export function buildWriteBatches<T extends MigrationRecord>(
 }
 
 async function readCollection(db: Firestore, collectionName: string) {
-  const snapshot = await db.collection(collectionName).get();
+  const snapshot = await db.collection(collectionName).select('ownerId').get();
 
   return snapshot.docs.map((document): LoadedMigrationRecord => ({
     id: document.id,
