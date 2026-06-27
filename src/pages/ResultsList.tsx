@@ -20,6 +20,7 @@ export default function ResultsList() {
 
     async function fetchResults() {
       setLoading(true);
+      setResults([]);
 
       try {
         const q = shouldFilterByOwner(authRequired, user?.uid)

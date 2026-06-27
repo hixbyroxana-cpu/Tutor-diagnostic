@@ -21,6 +21,8 @@ export default function Dashboard() {
 
     async function loadData() {
       setLoading(true);
+      setTests([]);
+      setResults([]);
 
       try {
         const filterByOwner = shouldFilterByOwner(authRequired, user?.uid);

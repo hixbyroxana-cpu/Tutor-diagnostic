@@ -20,6 +20,7 @@ export default function TestsList() {
 
     async function fetchTests() {
       setLoading(true);
+      setTests([]);
 
       try {
         const q = shouldFilterByOwner(authRequired, user?.uid)

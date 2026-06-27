@@ -8,7 +8,7 @@ import { LegacyTest, TestCreatePayload, TestUpdatePayload, TestLevel, Question, 
 import { generateSpecificQuestions } from '../services/gemini';
 import QuestionVisualizer from '../components/QuestionVisualizer';
 import { useAuth } from '../auth/AuthProvider';
-import { belongsToTutor } from '../lib/ownership';
+import { belongsToTutor, resolveTestSlug } from '../lib/ownership';
 import { canEditOwnedRecord, shouldFilterByOwner } from '../lib/tutor-query';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -106,12 +106,6 @@ const DEFAULT_GCSE_FOUNDATION_CHAPTERS = [
   'Vectors',
   'Rearranging equations, graphs of cubic and reciprocal functions and simultaneous equations',
 ];
-
-const slugify = (value: string) => value
-  .trim()
-  .toLowerCase()
-  .replace(/[^a-z0-9]+/g, '-')
-  .replace(/^-+|-+$/g, '');
 
 const cleanCurriculumLine = (line: string) => line
   .trim()
@@ -218,6 +212,7 @@ export default function TestEditor() {
   const [error, setError] = useState('');
   const [accessDenied, setAccessDenied] = useState(false);
   const [loadedOwnerId, setLoadedOwnerId] = useState<string | undefined>(undefined);
+  const [loadedSlug, setLoadedSlug] = useState<string | undefined>(undefined);
   
   const [title, setTitle] = useState('');
   const [titleManuallyEdited, setTitleManuallyEdited] = useState(false);
@@ -306,16 +301,31 @@ export default function TestEditor() {
     let ignore = false;
 
     async function loadTest() {
+      setLoading(!!id);
+      setSaving(false);
+      setGenerating(false);
       setAccessDenied(false);
       setError('');
       setLoadedOwnerId(undefined);
+      setLoadedSlug(undefined);
+      setTitle('');
+      setTitleManuallyEdited(false);
+      setLevel('KS3');
+      setDescription('');
+      setAiPrompt('');
+      setCurriculumText('');
+      setSelectedChapter('');
+      setQuestions([]);
+      setAiDrafts([]);
+      setGenPrompt('');
+      setGenerationStatus('');
+      setExpandedQs(new Set());
 
       if (!id) {
         setLoading(false);
         return;
       }
 
-      setLoading(true);
       if (authRequired === 'true' && !user?.uid) {
         setError('Authentication required.');
         setAccessDenied(true);
@@ -342,6 +352,7 @@ export default function TestEditor() {
           setAiPrompt(data.aiPrompt || '');
           setQuestions(data.questions || []);
           setLoadedOwnerId(data.ownerId);
+          setLoadedSlug(data.slug);
           setAccessDenied(false);
         } else {
           setError('Test not found');
@@ -465,7 +476,7 @@ export default function TestEditor() {
 
   const handleSave = async () => {
     const finalQuestions = [...questions, ...aiDrafts];
-    const slug = slugify(title);
+    const slug = resolveTestSlug(title, user?.uid, id ? loadedSlug : undefined);
     
     if (authRequired === 'true' && !user?.uid) {
       setError('Authentication required.');
