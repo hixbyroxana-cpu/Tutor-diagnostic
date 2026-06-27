@@ -1,4 +1,5 @@
 import { getAdminDb } from '../_firebase-admin.js';
+import { notificationsConfigured, sendResultEmail } from '../_email.js';
 import { handleApiError, HttpError, requirePost, sendJson } from '../_http.js';
 import {
   assertSubmissionId,
@@ -9,6 +10,7 @@ import {
   normalizeAnswers,
 } from './submission-core.js';
 import { loadSingleActiveTestBySlug } from './active-test.js';
+import { notifyTutorOfResult } from './result-notification.js';
 
 function requestBody(req: any) {
   if (typeof req.body === 'string') {
@@ -90,6 +92,32 @@ export default async function handler(req: any, res: any) {
 
       throw error;
     }
+
+    await notifyTutorOfResult(
+      {
+        enabled: notificationsConfigured(),
+        resultId: resultRef.id,
+        result,
+      },
+      {
+        async loadTutor(ownerId) {
+          const tutorSnapshot = await db.collection('tutors').doc(ownerId).get();
+          const tutor = tutorSnapshot.data();
+          if (!tutorSnapshot.exists || typeof tutor?.email !== 'string') return null;
+
+          return {
+            email: tutor.email,
+            displayName: typeof tutor.displayName === 'string'
+              ? tutor.displayName
+              : tutor.email,
+          };
+        },
+        send: sendResultEmail,
+        update: fields => resultRef.update(fields),
+        now: Date.now,
+        log: (message, error) => console.error(message, error),
+      },
+    );
 
     sendJson(res, 200, { resultId: resultRef.id });
   } catch (error) {
