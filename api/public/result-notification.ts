@@ -28,7 +28,7 @@ interface NotificationDependencies {
   log(message: string, error: unknown): void;
 }
 
-function logStatusError(
+function logWithoutThrowing(
   dependencies: NotificationDependencies,
   message: string,
   error: unknown,
@@ -58,10 +58,16 @@ export async function notifyTutorOfResult(
 
     await dependencies.send(tutor, input.result, input.resultId);
   } catch (error) {
+    logWithoutThrowing(
+      dependencies,
+      'Result email delivery failed.',
+      error,
+    );
+
     try {
       await dependencies.update(failedNotificationUpdate(error));
     } catch (statusError) {
-      logStatusError(
+      logWithoutThrowing(
         dependencies,
         'Result email failure status could not be saved.',
         statusError,
@@ -73,7 +79,7 @@ export async function notifyTutorOfResult(
   try {
     await dependencies.update(sentNotificationUpdate(dependencies.now()));
   } catch (statusError) {
-    logStatusError(
+    logWithoutThrowing(
       dependencies,
       'Result email sent but its status could not be saved.',
       statusError,

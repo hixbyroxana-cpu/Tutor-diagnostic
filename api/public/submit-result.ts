@@ -1,6 +1,7 @@
 import { getAdminDb } from '../_firebase-admin.js';
 import { notificationsConfigured, sendResultEmail } from '../_email.js';
 import { handleApiError, HttpError, requirePost, sendJson } from '../_http.js';
+import type { TestResult } from '../../src/types.js';
 import {
   assertSubmissionId,
   assertStudentInfo,
@@ -54,10 +55,78 @@ export function duplicateResponseForExistingSubmission(
   return duplicateSubmissionResponse(resultId);
 }
 
+type StoredNotificationResult = Pick<
+  TestResult,
+  | 'ownerId'
+  | 'studentFullName'
+  | 'testTitle'
+  | 'completedAt'
+  | 'notificationStatus'
+>;
+
+export async function reconcileDuplicateSubmission(
+  resultId: string,
+  existingResult: Record<string, unknown> | undefined,
+  requestedSlug: string,
+  reconcileNotification: (
+    resultId: string,
+    result: StoredNotificationResult,
+  ) => Promise<void>,
+) {
+  const response = duplicateResponseForExistingSubmission(
+    resultId,
+    existingResult,
+    requestedSlug,
+  );
+
+  if (
+    existingResult?.notificationStatus === 'pending'
+    || existingResult?.notificationStatus === 'failed'
+  ) {
+    await reconcileNotification(
+      resultId,
+      existingResult as unknown as StoredNotificationResult,
+    );
+  }
+
+  return response;
+}
+
 function isAlreadyExistsError(error: unknown) {
   if (!error || typeof error !== 'object') return false;
   const code = (error as { code?: unknown }).code;
   return code === 6 || code === 'already-exists';
+}
+
+export async function createResultOrReconcileDuplicate<T>(
+  input: {
+    resultId: string;
+    result: T;
+    requestedSlug: string;
+  },
+  dependencies: {
+    create(result: T): Promise<unknown>;
+    reread(): Promise<Record<string, unknown> | undefined>;
+    reconcileNotification: (
+      resultId: string,
+      result: StoredNotificationResult,
+    ) => Promise<void>;
+  },
+): Promise<DuplicateSubmissionResponse | null> {
+  try {
+    await dependencies.create(input.result);
+    return null;
+  } catch (error) {
+    if (!isAlreadyExistsError(error)) throw error;
+  }
+
+  const existingResult = await dependencies.reread();
+  return reconcileDuplicateSubmission(
+    input.resultId,
+    existingResult,
+    input.requestedSlug,
+    dependencies.reconcileNotification,
+  );
 }
 
 export default async function handler(req: any, res: any) {
@@ -71,33 +140,14 @@ export default async function handler(req: any, res: any) {
     const resultRef = db.collection('testResults').doc(submissionId);
     const existing = await resultRef.get();
 
-    if (existing.exists) {
-      sendJson(res, 200, duplicateResponseForExistingSubmission(existing.id, existing.data(), slug));
-      return;
-    }
-
-    const studentInfo = assertStudentInfo(body.studentInfo);
-    const answers = normalizeAnswers(body.answers);
-    const test = await loadSingleActiveTestBySlug(db, slug);
-    const result = buildStoredResult(test, answers, studentInfo, submissionId, Date.now());
-
-    try {
-      await resultRef.create(result);
-    } catch (error) {
-      if (isAlreadyExistsError(error)) {
-        const reread = await resultRef.get();
-        sendJson(res, 200, duplicateResponseForExistingSubmission(resultRef.id, reread.data(), slug));
-        return;
-      }
-
-      throw error;
-    }
-
-    await notifyTutorOfResult(
+    const reconcileNotification = (
+      resultId: string,
+      savedResult: StoredNotificationResult,
+    ) => notifyTutorOfResult(
       {
         enabled: notificationsConfigured(),
-        resultId: resultRef.id,
-        result,
+        resultId,
+        result: savedResult,
       },
       {
         async loadTutor(ownerId) {
@@ -118,6 +168,45 @@ export default async function handler(req: any, res: any) {
         log: (message, error) => console.error(message, error),
       },
     );
+
+    if (existing.exists) {
+      const response = await reconcileDuplicateSubmission(
+        existing.id,
+        existing.data(),
+        slug,
+        reconcileNotification,
+      );
+      sendJson(res, 200, response);
+      return;
+    }
+
+    const studentInfo = assertStudentInfo(body.studentInfo);
+    const answers = normalizeAnswers(body.answers);
+    const test = await loadSingleActiveTestBySlug(db, slug);
+    const result = buildStoredResult(test, answers, studentInfo, submissionId, Date.now());
+
+    const duplicate = await createResultOrReconcileDuplicate(
+      {
+        resultId: resultRef.id,
+        result,
+        requestedSlug: slug,
+      },
+      {
+        create: savedResult => resultRef.create(savedResult),
+        async reread() {
+          const reread = await resultRef.get();
+          return reread.data();
+        },
+        reconcileNotification,
+      },
+    );
+
+    if (duplicate) {
+      sendJson(res, 200, duplicate);
+      return;
+    }
+
+    await reconcileNotification(resultRef.id, result);
 
     sendJson(res, 200, { resultId: resultRef.id });
   } catch (error) {

@@ -3,6 +3,8 @@ import type { TestResult, TutorProfile } from '../src/types.js';
 
 type TutorRecipient = Pick<TutorProfile, 'email' | 'displayName'>;
 type CompletedResult = Pick<TestResult, 'studentFullName' | 'testTitle' | 'completedAt'>;
+const EMAIL_DELIVERY_TIMEOUT_MS = 10_000;
+const DEFAULT_APP_ORIGIN = 'https://diagnostic.click';
 
 interface ResultEmailInput {
   from: string;
@@ -28,8 +30,21 @@ function singleLine(value: string) {
   return value.replace(/[\r\n]+/g, ' ').trim();
 }
 
+function safeAppOrigin(value: string) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.username || url.password) {
+      return DEFAULT_APP_ORIGIN;
+    }
+
+    return url.origin;
+  } catch {
+    return DEFAULT_APP_ORIGIN;
+  }
+}
+
 export function buildResultEmail(input: ResultEmailInput) {
-  const baseUrl = input.appBaseUrl.replace(/\/+$/, '');
+  const baseUrl = safeAppOrigin(input.appBaseUrl);
   const resultUrl = `${baseUrl}/results/${encodeURIComponent(input.resultId)}`;
   const studentName = escapeHtml(input.result.studentFullName);
   const testTitle = escapeHtml(input.result.testTitle);
@@ -53,6 +68,22 @@ export function notificationsConfigured() {
   return Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
 }
 
+async function withDeliveryTimeout<T>(delivery: Promise<T>) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error('Result email delivery timed out.')),
+      EMAIL_DELIVERY_TIMEOUT_MS,
+    );
+  });
+
+  try {
+    return await Promise.race([delivery, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function sendResultEmail(
   tutor: TutorRecipient,
   result: CompletedResult,
@@ -65,15 +96,17 @@ export async function sendResultEmail(
   }
 
   const resend = new Resend(apiKey);
-  const response = await resend.emails.send(
-    buildResultEmail({
-      from,
-      tutor,
-      result,
-      resultId,
-      appBaseUrl: process.env.APP_BASE_URL || 'https://diagnostic.click',
-    }),
-    { idempotencyKey: `result-completed/${resultId}` },
+  const response = await withDeliveryTimeout(
+    resend.emails.send(
+      buildResultEmail({
+        from,
+        tutor,
+        result,
+        resultId,
+        appBaseUrl: process.env.APP_BASE_URL || DEFAULT_APP_ORIGIN,
+      }),
+      { idempotencyKey: `result-completed/${resultId}` },
+    ),
   );
 
   if (response.error) {
