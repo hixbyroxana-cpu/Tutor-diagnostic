@@ -1467,6 +1467,7 @@ Deploy a new production build. Do not redeploy a prebuilt deployment.
 - [ ] **Step 4: Deploy private Firestore rules**
 
 Deploy `firestore.rules` only after Task 9 confirms Roxana owns every existing record and can see them.
+The `Firestore Rules` workflow must pass for the exact rules revision before deployment.
 
 - [ ] **Step 5: Run end-to-end verification with a disposable test**
 
