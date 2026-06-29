@@ -5,12 +5,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const VERCEL_FUNCTION_SOURCE_EXTENSIONS = new Set([
-  '.cjs',
-  '.cts',
+  '.go',
   '.js',
-  '.jsx',
   '.mjs',
-  '.mts',
+  '.py',
+  '.rb',
+  '.rs',
   '.ts',
   '.tsx',
 ]);
@@ -58,7 +58,7 @@ describe('Vercel function layout', () => {
     expect(resolveApiDirectory(moduleUrl)).toBe(path.join(repositoryDirectory, 'api'));
   });
 
-  it('detects JavaScript and TypeScript sources but excludes declarations, maps, and private files', async () => {
+  it('detects Vercel zero-config sources but excludes unsupported, declaration, map, and private files', async () => {
     const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'vercel-function-layout-'));
     const nestedDirectory = path.join(fixtureRoot, 'nested');
 
@@ -67,27 +67,32 @@ describe('Vercel function layout', () => {
       await Promise.all([
         'handler.js',
         'handler.mjs',
-        'handler.cjs',
         'handler.ts',
-        'handler.mts',
+        'handler.tsx',
+        'handler.go',
+        'handler.py',
+        'handler.rb',
+        'handler.rs',
+        'handler.cjs',
         'handler.cts',
         'handler.jsx',
-        'handler.tsx',
+        'handler.mts',
         'handler.d.ts',
         'handler.d.mts',
         'handler.d.cts',
         'handler.js.map',
         'handler.ts.map',
         '_private.ts',
+        '_private.py',
       ].map(fileName => writeFile(path.join(nestedDirectory, fileName), '')));
 
       await expect(discoverVercelEntrypoints(fixtureRoot)).resolves.toEqual([
-        'nested/handler.cjs',
-        'nested/handler.cts',
+        'nested/handler.go',
         'nested/handler.js',
-        'nested/handler.jsx',
         'nested/handler.mjs',
-        'nested/handler.mts',
+        'nested/handler.py',
+        'nested/handler.rb',
+        'nested/handler.rs',
         'nested/handler.ts',
         'nested/handler.tsx',
       ]);
