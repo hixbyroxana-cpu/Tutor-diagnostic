@@ -9,9 +9,9 @@ import {
   type DuplicateSubmissionResponse,
   duplicateSubmissionResponse,
   normalizeAnswers,
-} from './submission-core.js';
-import { loadSingleActiveTestBySlug } from './active-test.js';
-import { notifyTutorOfResult } from './result-notification.js';
+} from './_submission-core.js';
+import { loadSingleActiveTestBySlug } from './_active-test.js';
+import { notifyTutorOfResult } from './_result-notification.js';
 
 function requestBody(req: any) {
   if (typeof req.body === 'string') {

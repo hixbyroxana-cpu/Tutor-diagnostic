@@ -6,7 +6,7 @@ import {
   buildTutorProfile,
   selectRequiredStarterTemplates,
   type StarterTestTemplate,
-} from './bootstrap-core.js';
+} from './_bootstrap-core.js';
 
 export default async function handler(req: any, res: any) {
   if (!requirePost(req, res)) return;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { selectSingleActiveTestDoc } from './active-test.js';
+import { selectSingleActiveTestDoc } from './_active-test.js';
 
 function doc(id: string, data: Record<string, unknown> = {}) {
   return {

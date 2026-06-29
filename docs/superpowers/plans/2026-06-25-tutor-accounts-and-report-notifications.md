@@ -446,17 +446,17 @@ git commit -m "Add authenticated server foundation"
 
 **Files:**
 - Create: `api/account/bootstrap.ts`
-- Create: `api/account/bootstrap-core.ts`
-- Create: `api/account/bootstrap-core.test.ts`
+- Create: `api/account/_bootstrap-core.ts`
+- Create: `api/account/_bootstrap-core.test.ts`
 - Create: `scripts/seed-test-templates.ts`
 
 - [ ] **Step 1: Write deterministic provisioning tests**
 
-Create `api/account/bootstrap-core.test.ts`:
+Create `api/account/_bootstrap-core.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest';
-import { buildStarterTest } from './bootstrap-core';
+import { buildStarterTest } from './_bootstrap-core';
 
 describe('buildStarterTest', () => {
   it('creates a tutor-owned editable copy with stable identity', () => {
@@ -478,14 +478,14 @@ describe('buildStarterTest', () => {
 Run:
 
 ```bash
-npm test -- api/account/bootstrap-core.test.ts
+npm test -- api/account/_bootstrap-core.test.ts
 ```
 
 Expected: FAIL because the core module does not exist.
 
 - [ ] **Step 3: Implement the pure starter-copy builder**
 
-Create `api/account/bootstrap-core.ts`:
+Create `api/account/_bootstrap-core.ts`:
 
 ```ts
 import type { Test } from '../../src/types';
@@ -559,7 +559,7 @@ Copy their content into `testTemplates`, remove `ownerId`, and add `templateVers
 Run:
 
 ```bash
-npm test -- api/account/bootstrap-core.test.ts
+npm test -- api/account/_bootstrap-core.test.ts
 npm run lint
 ```
 
@@ -577,18 +577,18 @@ git commit -m "Provision tutor starter tests"
 **Files:**
 - Create: `api/public/test.ts`
 - Create: `api/public/submit-result.ts`
-- Create: `api/public/submission-core.ts`
-- Create: `api/public/submission-core.test.ts`
+- Create: `api/public/_submission-core.ts`
+- Create: `api/public/_submission-core.test.ts`
 - Modify: `src/pages/PublicTestRunner.tsx`
 - Modify: `src/lib/marking.ts`
 
 - [ ] **Step 1: Write server-side marking and idempotency tests**
 
-Create `api/public/submission-core.test.ts`:
+Create `api/public/_submission-core.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest';
-import { buildStoredResult } from './submission-core';
+import { buildStoredResult } from './_submission-core';
 
 it('inherits ownership from the test and ignores client scoring', () => {
   const result = buildStoredResult(
@@ -625,14 +625,14 @@ it('inherits ownership from the test and ignores client scoring', () => {
 Run:
 
 ```bash
-npm test -- api/public/submission-core.test.ts
+npm test -- api/public/_submission-core.test.ts
 ```
 
-Expected: FAIL because `submission-core.ts` does not exist.
+Expected: FAIL because `_submission-core.ts` does not exist.
 
 - [ ] **Step 3: Make marking reusable on server and client**
 
-Change `src/lib/marking.ts` to accept typed `Test`, student details, and no browser globals. Create `buildStoredResult()` in `api/public/submission-core.ts`:
+Change `src/lib/marking.ts` to accept typed `Test`, student details, and no browser globals. Create `buildStoredResult()` in `api/public/_submission-core.ts`:
 
 ```ts
 export function buildStoredResult(test, answers, studentInfo, submissionId, completedAt) {
@@ -699,7 +699,7 @@ In `PublicTestRunner.tsx`:
 Run:
 
 ```bash
-npm test -- api/public/submission-core.test.ts
+npm test -- api/public/_submission-core.test.ts
 npm run lint
 npm run build
 ```
@@ -805,8 +805,8 @@ git commit -m "Scope dashboard data to tutors"
 **Files:**
 - Create: `api/_email.ts`
 - Create: `api/_email.test.ts`
-- Create: `api/public/result-notification.ts`
-- Create: `api/public/result-notification.test.ts`
+- Create: `api/public/_result-notification.ts`
+- Create: `api/public/_result-notification.test.ts`
 - Modify: `api/public/submit-result.ts`
 
 - [ ] **Step 1: Write the failing email payload test**
@@ -1019,11 +1019,11 @@ export function failedNotificationUpdate(error: unknown) {
 
 - [ ] **Step 7: Write failing delivery-orchestration tests**
 
-Create `api/public/result-notification.test.ts`:
+Create `api/public/_result-notification.test.ts`:
 
 ```ts
 import { describe, expect, it, vi } from 'vitest';
-import { notifyTutorOfResult } from './result-notification';
+import { notifyTutorOfResult } from './_result-notification';
 
 const result = {
   ownerId: 'tutor-1',
@@ -1110,14 +1110,14 @@ describe('notifyTutorOfResult', () => {
 Run:
 
 ```bash
-npm test -- api/public/result-notification.test.ts
+npm test -- api/public/_result-notification.test.ts
 ```
 
-Expected: FAIL because `api/public/result-notification.ts` does not exist.
+Expected: FAIL because `api/public/_result-notification.ts` does not exist.
 
 - [ ] **Step 9: Implement isolated delivery orchestration**
 
-Create `api/public/result-notification.ts`:
+Create `api/public/_result-notification.ts`:
 
 ```ts
 import type { TestResult, TutorProfile } from '../../src/types.js';
@@ -1213,7 +1213,7 @@ await notifyTutorOfResult(
 );
 ```
 
-Import `notificationsConfigured` and `sendResultEmail` from `../_email.js`, and `notifyTutorOfResult` from `./result-notification.js`.
+Import `notificationsConfigured` and `sendResultEmail` from `../_email.js`, and `notifyTutorOfResult` from `./_result-notification.js`.
 
 Do not attempt email before the result exists. When email is not configured during the compatibility release, leave `notificationStatus` as `pending`. Delivery and status-update failures are contained inside `notifyTutorOfResult`, so the handler still returns `{ resultId }` to the student.
 
@@ -1222,7 +1222,7 @@ Do not attempt email before the result exists. When email is not configured duri
 Run:
 
 ```bash
-npm test -- api/_email.test.ts api/public/result-notification.test.ts api/public/submit-result.test.ts
+npm test -- api/_email.test.ts api/public/_result-notification.test.ts api/public/_submit-result.test.ts
 npm test
 npm run lint
 npm run build
@@ -1233,7 +1233,7 @@ Expected: all exit 0. The existing browser PDF implementation and tests remain u
 - [ ] **Step 12: Commit**
 
 ```bash
-git add api/_email.ts api/_email.test.ts api/public/result-notification.ts api/public/result-notification.test.ts api/public/submit-result.ts
+git add api/_email.ts api/_email.test.ts api/public/_result-notification.ts api/public/_result-notification.test.ts api/public/submit-result.ts
 git commit -m "Email tutors when diagnostics complete"
 ```
 

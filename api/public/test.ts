@@ -1,7 +1,7 @@
 import { getAdminDb } from '../_firebase-admin.js';
 import { handleApiError, HttpError, requireMethod, sendJson } from '../_http.js';
 import type { Question, Test } from '../../src/types.js';
-import { loadSingleActiveTestBySlug } from './active-test.js';
+import { loadSingleActiveTestBySlug } from './_active-test.js';
 
 function publicQuestion(question: Question) {
   const { correctAnswer, explanation, target, ...safeQuestion } = question;

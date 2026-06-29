@@ -5,7 +5,7 @@ import {
   buildTutorProfile,
   selectRequiredStarterTemplates,
   type StarterTestTemplate,
-} from './bootstrap-core.js';
+} from './_bootstrap-core.js';
 import type { Test } from '../../src/types.js';
 
 const now = 1_765_000_000_000;

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { notifyTutorOfResult } from './result-notification.js';
+import { notifyTutorOfResult } from './_result-notification.js';
 import {
   createResultOrReconcileDuplicate,
   reconcileDuplicateSubmission,

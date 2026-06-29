@@ -5,7 +5,7 @@ import {
   assertStudentInfo,
   buildStoredResult,
   duplicateSubmissionResponse,
-} from './submission-core.js';
+} from './_submission-core.js';
 import type { Test } from '../../src/types.js';
 
 const completedAt = 1_766_000_000_000;
