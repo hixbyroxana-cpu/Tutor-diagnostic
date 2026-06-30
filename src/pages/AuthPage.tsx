@@ -5,9 +5,14 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { friendlyAuthError } from '../auth/auth-errors';
 import { acceptsBootstrapStatus } from '../auth/bootstrap-response';
 import {
+  passwordResetActionCodeSettings,
+  requestPasswordReset,
+} from '../auth/password-reset';
+import {
   auth,
   createUserWithEmailAndPassword,
   googleProvider,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
@@ -49,6 +54,9 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [resetMessage, setResetMessage] = useState('');
+  const [resetting, setResetting] = useState(false);
+  const busy = submitting || resetting;
   const location = useLocation();
   const navigate = useNavigate();
   const locationState = location.state as AuthLocationState | null;
@@ -76,6 +84,7 @@ export default function AuthPage() {
   async function submitEmail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
+    setResetMessage('');
     setSubmitting(true);
 
     try {
@@ -94,6 +103,7 @@ export default function AuthPage() {
 
   async function submitGoogle() {
     setError('');
+    setResetMessage('');
     setSubmitting(true);
 
     try {
@@ -105,6 +115,30 @@ export default function AuthPage() {
         : friendlyAuthError(errorCode(nextError)));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function requestReset() {
+    setError('');
+    setResetMessage('');
+    setResetting(true);
+
+    try {
+      const message = await requestPasswordReset(
+        email,
+        (normalizedEmail) => sendPasswordResetEmail(
+          auth,
+          normalizedEmail,
+          passwordResetActionCodeSettings(window.location.origin),
+        ),
+      );
+      setResetMessage(message);
+    } catch (nextError) {
+      setError(nextError instanceof Error
+        ? nextError.message
+        : 'We could not send the reset email. Please try again.');
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -139,8 +173,9 @@ export default function AuthPage() {
               onClick={() => {
                 setMode(option.value);
                 setError('');
+                setResetMessage('');
               }}
-              disabled={submitting}
+              disabled={busy}
             >
               {option.label}
             </button>
@@ -156,9 +191,13 @@ export default function AuthPage() {
                 type="email"
                 autoComplete="email"
                 required
+                disabled={busy}
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white py-2.5 pl-10 pr-3 text-slate-900 outline-none transition focus:border-[#126b73] focus:ring-2 focus:ring-teal-700/15"
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  setResetMessage('');
+                }}
+                className="w-full rounded-lg border border-slate-300 bg-white py-2.5 pl-10 pr-3 text-slate-900 outline-none transition focus:border-[#126b73] focus:ring-2 focus:ring-teal-700/15 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
               />
             </span>
           </label>
@@ -172,12 +211,28 @@ export default function AuthPage() {
                 autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
                 required
                 minLength={6}
+                disabled={busy}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white py-2.5 pl-10 pr-3 text-slate-900 outline-none transition focus:border-[#126b73] focus:ring-2 focus:ring-teal-700/15"
+                className="w-full rounded-lg border border-slate-300 bg-white py-2.5 pl-10 pr-3 text-slate-900 outline-none transition focus:border-[#126b73] focus:ring-2 focus:ring-teal-700/15 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
               />
             </span>
           </label>
+
+          {mode === 'sign-in' && (
+            <div className="-mt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={requestReset}
+                disabled={busy}
+                aria-busy={resetting}
+                className="inline-flex min-h-8 items-center gap-1.5 text-sm font-semibold text-[#126b73] hover:text-[#0d545b] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {resetting && <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                {resetting ? 'Sending reset email...' : 'Forgot password?'}
+              </button>
+            </div>
+          )}
 
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700" role="alert">
@@ -185,9 +240,15 @@ export default function AuthPage() {
             </div>
           )}
 
+          {resetMessage && (
+            <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2.5 text-sm text-teal-800" role="status">
+              {resetMessage}
+            </div>
+          )}
+
           <button
             type="submit"
-            disabled={submitting}
+            disabled={busy}
             className="brand-button w-full min-h-11 rounded-lg px-4 flex items-center justify-center gap-2 font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? (
@@ -210,7 +271,7 @@ export default function AuthPage() {
         <button
           type="button"
           onClick={submitGoogle}
-          disabled={submitting}
+          disabled={busy}
           className="w-full min-h-11 rounded-lg border border-slate-300 bg-white px-4 flex items-center justify-center gap-2 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Chrome className="w-4 h-4" aria-hidden="true" />
