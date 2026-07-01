@@ -9,7 +9,7 @@ import {
   signInWithPopup,
   signOut,
 } from "firebase/auth";
-import { getFirestore, collection, addDoc, getDocs, updateDoc, doc, getDoc, query, where, orderBy, setDoc, limit } from "firebase/firestore";
+import { getFirestore, collection, addDoc, deleteDoc, getDocs, updateDoc, doc, getDoc, query, where, orderBy, setDoc, limit } from "firebase/firestore";
 import firebaseConfig from "../firebase-applet-config.json";
 
 const app = initializeApp(firebaseConfig);
@@ -20,6 +20,7 @@ export const googleProvider = new GoogleAuthProvider();
 export {
   collection,
   addDoc,
+  deleteDoc,
   getDocs,
   updateDoc,
   doc,
