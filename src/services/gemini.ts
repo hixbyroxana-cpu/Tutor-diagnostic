@@ -1,4 +1,4 @@
-import { TestLevel, Question, TestResult } from '../types';
+import { TestLevel, Question, LegacyTestResult } from '../types';
 
 async function postJson<T>(url: string, payload: unknown, fallbackMessage: string): Promise<T> {
   const response = await fetch(url, {
@@ -52,7 +52,7 @@ export const generateSpecificQuestions = async (
 };
 
 export const generateParentSummary = async (
-  result: TestResult,
+  result: LegacyTestResult,
 ): Promise<string> => {
   try {
     const data = await postJson<{ summary: string }>(

@@ -1,36 +1,84 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Plus, Search, Copy, Check, Edit, Trash2 } from 'lucide-react';
-import { db, collection, getDocs, query, orderBy, doc, updateDoc } from '../firebase';
-import { Test } from '../types';
+import { Link } from 'react-router-dom';
+import { AlertTriangle, Plus, Copy, Check, Edit, Trash2 } from 'lucide-react';
+import { db, collection, deleteDoc, doc, getDocs, query, orderBy, where } from '../firebase';
+import { useAuth } from '../auth/AuthProvider';
+import { LegacyTest } from '../types';
+import { belongsToTutor } from '../lib/ownership';
+import { deleteTestDocument, removeTestById } from '../lib/test-deletion';
+import { getPublicAppBaseUrl, shouldFilterByOwner } from '../lib/tutor-query';
 import { cn, getLevelColor } from '../lib/utils';
 
+const authRequired = import.meta.env.VITE_AUTH_REQUIRED;
+
 export default function TestsList() {
-  const [tests, setTests] = useState<Test[]>([]);
+  const { user } = useAuth();
+  const [tests, setTests] = useState<LegacyTest[]>([]);
   const [loading, setLoading] = useState(true);
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
+  const [testPendingDeletion, setTestPendingDeletion] = useState<LegacyTest | null>(null);
+  const [deletingTestId, setDeletingTestId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState('');
 
   useEffect(() => {
+    let ignore = false;
+
     async function fetchTests() {
+      setLoading(true);
+      setTests([]);
+
       try {
-        const q = query(collection(db, 'tests'), orderBy('createdAt', 'desc'));
+        const q = shouldFilterByOwner(authRequired, user?.uid)
+          ? query(collection(db, 'tests'), where('ownerId', '==', user!.uid), orderBy('createdAt', 'desc'))
+          : query(collection(db, 'tests'), orderBy('createdAt', 'desc'));
         const snap = await getDocs(q);
-        setTests(snap.docs.map(d => ({ id: d.id, ...d.data() } as Test)));
+        if (ignore) return;
+        setTests(snap.docs.map(d => ({ id: d.id, ...d.data() } as LegacyTest)));
       } catch (err) {
+        if (ignore) return;
         console.error(err);
       } finally {
-        setLoading(false);
+        if (!ignore) setLoading(false);
       }
     }
     fetchTests();
-  }, []);
+
+    return () => {
+      ignore = true;
+    };
+  }, [user?.uid]);
 
   const copyLink = (slug: string) => {
-    const url = `${window.location.origin}/test/${slug}`;
+    const baseUrl = getPublicAppBaseUrl(import.meta.env.VITE_PUBLIC_APP_URL, window.location.origin);
+    const url = `${baseUrl}/test/${slug}`;
     navigator.clipboard.writeText(url);
     setCopiedSlug(slug);
     setTimeout(() => setCopiedSlug(null), 2000);
   };
+
+  async function confirmDelete() {
+    const testId = testPendingDeletion?.id;
+    if (!testPendingDeletion || !testId || !user?.uid || !belongsToTutor(testPendingDeletion, user.uid)) {
+      setDeleteError('You can only delete tests owned by your account.');
+      return;
+    }
+
+    setDeletingTestId(testId);
+    setDeleteError('');
+
+    try {
+      await deleteTestDocument(testId, async selectedId => {
+        await deleteDoc(doc(db, 'tests', selectedId));
+      });
+      setTests(current => removeTestById(current, testId));
+      setTestPendingDeletion(null);
+    } catch (error) {
+      console.error('Failed to delete test', error);
+      setDeleteError('The test could not be deleted. Please try again.');
+    } finally {
+      setDeletingTestId(null);
+    }
+  }
 
   if (loading) return <div className="animate-pulse">Loading tests...</div>;
 
@@ -100,6 +148,20 @@ export default function TestsList() {
                       >
                         <Edit className="w-4 h-4" />
                       </Link>
+                      {test.id && user?.uid && belongsToTutor(test, user.uid) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteError('');
+                            setTestPendingDeletion(test);
+                          }}
+                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition"
+                          aria-label={`Delete ${test.title}`}
+                          title="Delete Test"
+                        >
+                          <Trash2 className="w-4 h-4" aria-hidden="true" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -108,6 +170,67 @@ export default function TestsList() {
           </tbody>
         </table>
       </div>
+
+      {testPendingDeletion && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4"
+          role="presentation"
+          onMouseDown={event => {
+            if (event.currentTarget === event.target && !deletingTestId) {
+              setTestPendingDeletion(null);
+              setDeleteError('');
+            }
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-test-heading"
+            className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
+          >
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" aria-hidden="true" />
+              <div>
+                <h2 id="delete-test-heading" className="text-lg font-bold text-slate-900">
+                  Delete {testPendingDeletion.title}?
+                </h2>
+                <p className="mt-2 text-sm text-slate-600">
+                  Its student link will stop working. Completed results and reports will remain available.
+                  This cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            {deleteError && (
+              <p className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+                {deleteError}
+              </p>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                disabled={Boolean(deletingTestId)}
+                onClick={() => {
+                  setTestPendingDeletion(null);
+                  setDeleteError('');
+                }}
+                className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(deletingTestId)}
+                onClick={() => void confirmDelete()}
+                className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {deletingTestId ? 'Deleting...' : 'Delete test'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

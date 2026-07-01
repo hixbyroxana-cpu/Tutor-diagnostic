@@ -1,29 +1,49 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Filter, Eye } from 'lucide-react';
-import { db, collection, getDocs, query, orderBy } from '../firebase';
-import { TestResult } from '../types';
+import { db, collection, getDocs, query, orderBy, where } from '../firebase';
+import { useAuth } from '../auth/AuthProvider';
+import { LegacyTestResult } from '../types';
+import { shouldFilterByOwner } from '../lib/tutor-query';
+
+const authRequired = import.meta.env.VITE_AUTH_REQUIRED;
 
 export default function ResultsList() {
-  const [results, setResults] = useState<TestResult[]>([]);
+  const { user } = useAuth();
+  const [results, setResults] = useState<LegacyTestResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterLevel, setFilterLevel] = useState<string>('All');
   const [search, setSearch] = useState('');
 
   useEffect(() => {
+    let ignore = false;
+
     async function fetchResults() {
+      setLoading(true);
+      setResults([]);
+      setSearch('');
+      setFilterLevel('All');
+
       try {
-        const q = query(collection(db, 'testResults'), orderBy('completedAt', 'desc'));
+        const q = shouldFilterByOwner(authRequired, user?.uid)
+          ? query(collection(db, 'testResults'), where('ownerId', '==', user!.uid), orderBy('completedAt', 'desc'))
+          : query(collection(db, 'testResults'), orderBy('completedAt', 'desc'));
         const snap = await getDocs(q);
-        setResults(snap.docs.map(d => ({ id: d.id, ...d.data() } as TestResult)));
+        if (ignore) return;
+        setResults(snap.docs.map(d => ({ id: d.id, ...d.data() } as LegacyTestResult)));
       } catch (err) {
+        if (ignore) return;
         console.error(err);
       } finally {
-        setLoading(false);
+        if (!ignore) setLoading(false);
       }
     }
     fetchResults();
-  }, []);
+
+    return () => {
+      ignore = true;
+    };
+  }, [user?.uid]);
 
   const levels = ['All', ...Array.from(new Set(results.map(r => r.testLevel)))];
 

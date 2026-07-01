@@ -1,40 +1,63 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, Users, Clock, ArrowRight, ExternalLink, Copy, Edit } from 'lucide-react';
-import { db, collection, getDocs, query, orderBy, limit } from '../firebase';
-import { Test, TestResult } from '../types';
+import { Check, Copy, Edit } from 'lucide-react';
+import { db, collection, getDocs, query, orderBy, limit, where } from '../firebase';
+import { useAuth } from '../auth/AuthProvider';
+import { LegacyTest, LegacyTestResult } from '../types';
+import { getPublicAppBaseUrl, shouldFilterByOwner } from '../lib/tutor-query';
 import { cn, getLevelColor } from '../lib/utils';
 
+const authRequired = import.meta.env.VITE_AUTH_REQUIRED;
+
 export default function Dashboard() {
-  const [tests, setTests] = useState<Test[]>([]);
-  const [results, setResults] = useState<TestResult[]>([]);
+  const { user } = useAuth();
+  const [tests, setTests] = useState<LegacyTest[]>([]);
+  const [results, setResults] = useState<LegacyTestResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
 
   useEffect(() => {
+    let ignore = false;
+
     async function loadData() {
+      setLoading(true);
+      setTests([]);
+      setResults([]);
+
       try {
-        const testsQ = query(collection(db, 'tests'), orderBy('createdAt', 'desc'), limit(5));
+        const filterByOwner = shouldFilterByOwner(authRequired, user?.uid);
+        const testsQ = filterByOwner
+          ? query(collection(db, 'tests'), where('ownerId', '==', user!.uid), orderBy('createdAt', 'desc'), limit(5))
+          : query(collection(db, 'tests'), orderBy('createdAt', 'desc'), limit(5));
         const testsSnap = await getDocs(testsQ);
-        const testsData = testsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Test));
+        const testsData = testsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as LegacyTest));
 
-        const resQ = query(collection(db, 'testResults'), orderBy('completedAt', 'desc'), limit(10));
+        const resQ = filterByOwner
+          ? query(collection(db, 'testResults'), where('ownerId', '==', user!.uid), orderBy('completedAt', 'desc'), limit(10))
+          : query(collection(db, 'testResults'), orderBy('completedAt', 'desc'), limit(10));
         const resSnap = await getDocs(resQ);
-        const resData = resSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as TestResult));
+        const resData = resSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as LegacyTestResult));
 
+        if (ignore) return;
         setTests(testsData);
         setResults(resData);
       } catch (err) {
+        if (ignore) return;
         console.error("Failed to load dashboard data", err);
       } finally {
-        setLoading(false);
+        if (!ignore) setLoading(false);
       }
     }
     loadData();
-  }, []);
+
+    return () => {
+      ignore = true;
+    };
+  }, [user?.uid]);
 
   const copyLink = (slug: string) => {
-    const url = `${window.location.origin}/test/${slug}`;
+    const baseUrl = getPublicAppBaseUrl(import.meta.env.VITE_PUBLIC_APP_URL, window.location.origin);
+    const url = `${baseUrl}/test/${slug}`;
     navigator.clipboard.writeText(url);
     setCopiedSlug(slug);
     setTimeout(() => setCopiedSlug(null), 2000);
@@ -190,13 +213,4 @@ export default function Dashboard() {
       </div>
     </div>
   );
-}
-
-// Quick inline component for Check to save import space
-function Check(props: any) {
-  return (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
-  )
 }

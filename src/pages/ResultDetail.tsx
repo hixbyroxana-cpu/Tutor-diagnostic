@@ -1,12 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { db, doc, getDoc, updateDoc } from '../firebase';
-import { TestResult } from '../types';
+import { LegacyTestResult } from '../types';
 import { generateParentSummary } from '../services/gemini';
 import { downloadDiagnosticReportPdf, downloadLearningPlanPdf } from '../lib/pdf';
 import { ArrowLeft, RefreshCw, Mail, Target, AlertTriangle, CheckCircle2, Copy, Download, FileText, CalendarDays } from 'lucide-react';
+import { useAuth } from '../auth/AuthProvider';
+import { belongsToTutor } from '../lib/ownership';
+import { shouldFilterByOwner } from '../lib/tutor-query';
 
-function buildStructuredParentMessage(result: TestResult) {
+const authRequired = import.meta.env.VITE_AUTH_REQUIRED;
+
+function buildStructuredParentMessage(result: LegacyTestResult) {
   const secureTopics = result.topicBreakdown.filter(topic => topic.status === 'secure');
   const developingTopics = result.topicBreakdown.filter(topic => topic.status === 'developing');
   const weakTopics = result.topicBreakdown.filter(topic => topic.status === 'weak');
@@ -44,46 +49,102 @@ function buildStructuredParentMessage(result: TestResult) {
 
 export default function ResultDetail() {
   const { id } = useParams();
-  const [result, setResult] = useState<TestResult | null>(null);
+  const { user } = useAuth();
+  const activeResultContextRef = useRef<{ id?: string; uid?: string } | null>(null);
+  const summaryRequestRef = useRef(0);
+  const [result, setResult] = useState<LegacyTestResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [generatingSummary, setGeneratingSummary] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   useEffect(() => {
+    let ignore = false;
+    activeResultContextRef.current = { id, uid: user?.uid };
+
     async function loadResult() {
-      if (!id) return;
+      setAccessDenied(false);
+      setGeneratingSummary(false);
+      setResult(null);
+      setLoading(true);
+
+      if (!id) {
+        setLoading(false);
+        return;
+      }
+
+      if (authRequired === 'true' && !user?.uid) {
+        setAccessDenied(true);
+        setLoading(false);
+        return;
+      }
+
       try {
         const snap = await getDoc(doc(db, 'testResults', id));
+        if (ignore) return;
+
         if (snap.exists()) {
-          const data = snap.data() as TestResult;
+          const data = snap.data() as LegacyTestResult;
+          if (shouldFilterByOwner(authRequired, user?.uid) && !belongsToTutor(data, user!.uid)) {
+            setAccessDenied(true);
+            return;
+          }
+
           setResult(data);
+          setAccessDenied(false);
           
           // Auto-generate parent summary if it doesn't exist
           if (!data.parentSummary) {
-            generateSummary(data);
+            generateSummary(data, id, user?.uid);
           }
         }
       } catch (err) {
+        if (ignore) return;
         console.error(err);
       } finally {
-        setLoading(false);
+        if (!ignore) setLoading(false);
       }
     }
     loadResult();
-  }, [id]);
 
-  const generateSummary = async (data: TestResult) => {
-    if (!id) return;
+    return () => {
+      ignore = true;
+      summaryRequestRef.current += 1;
+      activeResultContextRef.current = null;
+    };
+  }, [id, user?.uid]);
+
+  const generateSummary = async (
+    data: LegacyTestResult,
+    expectedId = id,
+    expectedUid = user?.uid,
+  ) => {
+    if (!expectedId) return;
+    if (authRequired === 'true' && !expectedUid) return;
+    if (shouldFilterByOwner(authRequired, expectedUid) && !belongsToTutor(data, expectedUid!)) return;
+
+    const requestId = summaryRequestRef.current + 1;
+    summaryRequestRef.current = requestId;
+    const isCurrentRequest = () => {
+      const context = activeResultContextRef.current;
+      return summaryRequestRef.current === requestId &&
+        context?.id === expectedId &&
+        context?.uid === expectedUid;
+    };
+
     setGeneratingSummary(true);
     try {
       const summary = await generateParentSummary(data);
+      if (!isCurrentRequest()) return;
       
-      await updateDoc(doc(db, 'testResults', id), { parentSummary: summary });
+      await updateDoc(doc(db, 'testResults', expectedId), { parentSummary: summary });
+      if (!isCurrentRequest()) return;
       setResult(prev => prev ? { ...prev, parentSummary: summary } : null);
     } catch (err) {
+      if (!isCurrentRequest()) return;
       console.error('Failed to generate summary', err);
     } finally {
-      setGeneratingSummary(false);
+      if (isCurrentRequest()) setGeneratingSummary(false);
     }
   };
 
@@ -96,6 +157,7 @@ export default function ResultDetail() {
   };
 
   if (loading) return <div className="animate-pulse p-8">Loading result...</div>;
+  if (accessDenied) return <div className="p-8">You do not have access to this result.</div>;
   if (!result) return <div className="p-8">Result not found.</div>;
 
   const secureTopics = result.topicBreakdown.filter(topic => topic.status === 'secure');

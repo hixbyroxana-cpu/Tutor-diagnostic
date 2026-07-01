@@ -1,16 +1,29 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
-import { db, collection, getDocs, query, where, addDoc } from '../firebase';
-import { Test, Question } from '../types';
-import { calculateTestResults } from '../lib/marking';
+import type { Question, TestLevel, VisualData, VisualAspectType } from '../types';
+import { clearPublicAttemptId, startPublicAttemptId } from '../lib/publicAttemptId';
 
 import QuestionVisualizer from '../components/QuestionVisualizer';
 
+type PublicQuestion = Omit<Question, 'correctAnswer' | 'explanation' | 'target'> & {
+  visualType?: VisualAspectType;
+  visualData?: VisualData;
+};
+
+interface PublicTest {
+  title: string;
+  level: TestLevel;
+  slug: string;
+  description: string;
+  questions: PublicQuestion[];
+}
+
 export default function PublicTestRunner() {
   const { slug } = useParams();
-  const [test, setTest] = useState<Test | null>(null);
+  const [test, setTest] = useState<PublicTest | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [submissionId, setSubmissionId] = useState('');
   
   // State: 'intro', 'testing', 'completed'
   const [stage, setStage] = useState<'intro' | 'testing' | 'completed'>('intro');
@@ -25,27 +38,54 @@ export default function PublicTestRunner() {
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
   useEffect(() => {
+    if (!slug) {
+      setError('Test not found or no longer active.');
+      setLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+
     async function loadTest() {
       try {
-        const q = query(collection(db, 'tests'), where('slug', '==', slug), where('isActive', '==', true));
-        const snap = await getDocs(q);
-        if (snap.empty) {
-          setError('Test not found or no longer active.');
-        } else {
-          setTest({ id: snap.docs[0].id, ...snap.docs[0].data() } as Test);
+        setLoading(true);
+        setError('');
+        setAnswers({});
+        setStage('intro');
+        setSubmissionId('');
+        clearPublicAttemptId(slug);
+
+        const response = await fetch(`/api/public/test?slug=${encodeURIComponent(slug)}`, {
+          signal: controller.signal,
+        });
+        const body = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(body.error || 'Test not found or no longer active.');
         }
+
+        setTest(body as PublicTest);
       } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
         console.error(err);
-        setError('Failed to load test.');
+        setError(err instanceof Error ? err.message : 'Failed to load test.');
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
       }
     }
+
     loadTest();
+
+    return () => controller.abort();
   }, [slug]);
 
   const handleStart = (e: FormEvent) => {
     e.preventDefault();
+    if (test) {
+      setSubmissionId(startPublicAttemptId(test.slug));
+    }
     setStage('testing');
     window.scrollTo(0, 0);
   };
@@ -60,29 +100,37 @@ export default function PublicTestRunner() {
     // Quick validation check
     const answeredCount = Object.keys(answers).length;
     if (answeredCount < test.questions.length) {
-      if (!window.confirm(`You have only answered ${answeredCount} out of ${test.questions.length} questions. Are you sure you want to construct?`)) {
+      if (!window.confirm(`You have only answered ${answeredCount} out of ${test.questions.length} questions. Are you sure you want to submit?`)) {
         return;
       }
     }
 
     setSubmitting(true);
     try {
-      // Auto-mark and generate result
-      const resultData = calculateTestResults(test, answers, {
-        studentFirstName,
-        studentLastName,
-        parentName: '',
-        parentEmail,
-        notes: ''
+      const response = await fetch('/api/public/submit-result', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slug: test.slug,
+          submissionId: submissionId || startPublicAttemptId(test.slug),
+          studentInfo: {
+            studentFirstName,
+            studentLastName,
+            parentName: '',
+            parentEmail,
+            notes: '',
+          },
+          answers,
+        }),
       });
 
-      const finalResult = {
-        ...resultData,
-        completedAt: Date.now(),
-        isNew: true,
-      };
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || 'Failed to submit test.');
+      }
 
-      await addDoc(collection(db, 'testResults'), finalResult);
+      clearPublicAttemptId(test.slug);
+      setSubmissionId('');
       setStage('completed');
       window.scrollTo(0, 0);
     } catch (err) {
@@ -127,11 +175,11 @@ export default function PublicTestRunner() {
                 <div className="grid grid-cols-2 gap-5">
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1">Student First Name *</label>
-                    <input required type="text" value={studentFirstName} onChange={e => setStudentFirstName(e.target.value)} className="w-full border-slate-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-3" />
+                    <input required maxLength={80} type="text" value={studentFirstName} onChange={e => setStudentFirstName(e.target.value)} className="w-full border-slate-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-3" />
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1">Student Last Name *</label>
-                    <input required type="text" value={studentLastName} onChange={e => setStudentLastName(e.target.value)} className="w-full border-slate-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-3" />
+                    <input required maxLength={80} type="text" value={studentLastName} onChange={e => setStudentLastName(e.target.value)} className="w-full border-slate-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-3" />
                   </div>
                 </div>
                 

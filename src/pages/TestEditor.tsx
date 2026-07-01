@@ -1,14 +1,27 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Save, Sparkles, Trash2, Plus, GripVertical, ChevronDown, ChevronRight, AlertCircle, Image as ImageIcon } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { db, doc, getDoc, collection, addDoc, updateDoc } from '../firebase';
-import { Test, TestLevel, Question, QuestionDifficulty, VisualAspectType } from '../types';
+import { LegacyTest, TestCreatePayload, TestUpdatePayload, TestLevel, Question, QuestionDifficulty, VisualAspectType } from '../types';
 import { generateSpecificQuestions } from '../services/gemini';
 import QuestionVisualizer from '../components/QuestionVisualizer';
+import { useAuth } from '../auth/AuthProvider';
+import { belongsToTutor, resolveTestSlug } from '../lib/ownership';
+import { canEditOwnedRecord, shouldFilterByOwner } from '../lib/tutor-query';
+import { isEditorRequestContextCurrent, type EditorRequestContext } from '../lib/editor-request-context';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
+const authRequired = import.meta.env.VITE_AUTH_REQUIRED;
+
+const isPermissionLikeError = (err: unknown) => {
+  const error = err as { code?: string; message?: string };
+  const message = error.message?.toLowerCase() || '';
+
+  return error.code === 'permission-denied' || message.includes('permission') || message.includes('missing or insufficient permissions');
+};
 
 const LEVELS: TestLevel[] = ['Year 2', 'Year 3', 'Year 4', 'Year 5', 'Year 6', '11+', 'KS3', 'GCSE Foundation', 'GCSE Higher', 'A-Level', 'Adult'];
 const OVERALL_REVISION = 'Overall revision';
@@ -94,12 +107,6 @@ const DEFAULT_GCSE_FOUNDATION_CHAPTERS = [
   'Vectors',
   'Rearranging equations, graphs of cubic and reciprocal functions and simultaneous equations',
 ];
-
-const slugify = (value: string) => value
-  .trim()
-  .toLowerCase()
-  .replace(/[^a-z0-9]+/g, '-')
-  .replace(/^-+|-+$/g, '');
 
 const cleanCurriculumLine = (line: string) => line
   .trim()
@@ -198,11 +205,21 @@ const extractTextFromPdf = async (file: File) => {
 export default function TestEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const editorContextRef = useRef<EditorRequestContext>({
+    testId: id,
+    uid: user?.uid,
+    generation: 0,
+  });
+  const editorMountedRef = useRef(false);
   
   const [loading, setLoading] = useState(!!id);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [loadedOwnerId, setLoadedOwnerId] = useState<string | undefined>(undefined);
+  const [loadedSlug, setLoadedSlug] = useState<string | undefined>(undefined);
   
   const [title, setTitle] = useState('');
   const [titleManuallyEdited, setTitleManuallyEdited] = useState(false);
@@ -267,6 +284,24 @@ export default function TestEditor() {
     aiPrompt,
   ].filter(Boolean).join('\n\n');
 
+  useLayoutEffect(() => {
+    if (editorContextRef.current.testId !== id || editorContextRef.current.uid !== user?.uid) {
+      editorContextRef.current = {
+        testId: id,
+        uid: user?.uid,
+        generation: editorContextRef.current.generation + 1,
+      };
+    }
+
+    editorMountedRef.current = true;
+    return () => {
+      editorMountedRef.current = false;
+    };
+  }, [id, user?.uid]);
+
+  const isCurrentEditorRequest = (requestContext: EditorRequestContext) =>
+    editorMountedRef.current && isEditorRequestContextCurrent(requestContext, editorContextRef.current);
+
   useEffect(() => {
     if (!showCurriculumSelector) {
       setSelectedChapter('');
@@ -288,25 +323,88 @@ export default function TestEditor() {
   }, [id, level, selectedChapter, titleManuallyEdited]);
 
   useEffect(() => {
-    if (id) {
-      getDoc(doc(db, 'tests', id)).then((snap) => {
+    let ignore = false;
+
+    async function loadTest() {
+      setLoading(!!id);
+      setSaving(false);
+      setGenerating(false);
+      setAccessDenied(false);
+      setError('');
+      setLoadedOwnerId(undefined);
+      setLoadedSlug(undefined);
+      setTitle('');
+      setTitleManuallyEdited(false);
+      setLevel('KS3');
+      setDescription('');
+      setAiPrompt('');
+      setCurriculumText('');
+      setSelectedChapter('');
+      setQuestions([]);
+      setAiDrafts([]);
+      setGenPrompt('');
+      setGenerationStatus('');
+      setExpandedQs(new Set());
+
+      if (!id) {
+        setLoading(false);
+        return;
+      }
+
+      if (authRequired === 'true' && !user?.uid) {
+        setError('Authentication required.');
+        setAccessDenied(true);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const snap = await getDoc(doc(db, 'tests', id));
+        if (ignore) return;
+
         if (snap.exists()) {
-          const data = snap.data() as Test;
+          const data = snap.data() as LegacyTest;
+          if (shouldFilterByOwner(authRequired, user?.uid) && !belongsToTutor(data, user!.uid)) {
+            setError('You do not have access to this test.');
+            setAccessDenied(true);
+            setLoading(false);
+            return;
+          }
+
           setTitle(data.title);
           setLevel(data.level);
           setDescription(data.description);
           setAiPrompt(data.aiPrompt || '');
           setQuestions(data.questions || []);
+          setLoadedOwnerId(data.ownerId);
+          setLoadedSlug(data.slug);
+          setAccessDenied(false);
         } else {
           setError('Test not found');
         }
-        setLoading(false);
-      });
+      } catch (err: any) {
+        if (ignore) return;
+
+        console.error(err);
+        setError(err.message || 'Could not load test.');
+        if (authRequired === 'true' && isPermissionLikeError(err)) {
+          setAccessDenied(true);
+        }
+      } finally {
+        if (!ignore) setLoading(false);
+      }
     }
-  }, [id]);
+
+    loadTest();
+
+    return () => {
+      ignore = true;
+    };
+  }, [id, user?.uid]);
 
   const handleGenerateFull = async () => {
     if (!level) return;
+    const requestContext = editorContextRef.current;
     setGenerating(true);
     setError('');
     setGenerationStatus('');
@@ -315,6 +413,8 @@ export default function TestEditor() {
       const generated: Question[] = [];
 
       for (let batch = 0; batch < batches; batch += 1) {
+        if (!isCurrentEditorRequest(requestContext)) return;
+
         const remaining = fullGenCount - generated.length;
         const batchSize = Math.min(5, remaining);
         const batchPrompt = [
@@ -325,20 +425,27 @@ export default function TestEditor() {
 
         setGenerationStatus(`Generating ${generated.length + batchSize} of ${fullGenCount}...`);
         const qs = await generateSpecificQuestions(level, batchPrompt, batchSize);
+        if (!isCurrentEditorRequest(requestContext)) return;
+
         generated.push(...qs);
         setAiDrafts([...generated]);
         setExpandedQs(new Set([generated[0].id]));
       }
     } catch (err: any) {
-      setError(err.message || 'Error generating test');
+      if (isCurrentEditorRequest(requestContext)) {
+        setError(err.message || 'Error generating test');
+      }
     } finally {
-      setGenerationStatus('');
-      setGenerating(false);
+      if (isCurrentEditorRequest(requestContext)) {
+        setGenerationStatus('');
+        setGenerating(false);
+      }
     }
   };
 
   const handleGenerateSpecific = async () => {
     if (!level || !genPrompt.trim()) return;
+    const requestContext = editorContextRef.current;
     setGenerating(true);
     setError('');
     setGenerationStatus('');
@@ -349,29 +456,39 @@ export default function TestEditor() {
           ? `${genPrompt}\n\nCurriculum scope: overall ${level} revision`
         : genPrompt;
       const qs = await generateSpecificQuestions(level, description, genCount);
+      if (!isCurrentEditorRequest(requestContext)) return;
+
       setAiDrafts(prev => [...prev, ...qs]);
       setExpandedQs(prev => new Set(prev).add(qs[0].id));
       setGenPrompt('');
     } catch (err: any) {
-      setError(err.message || 'Error generating questions');
+      if (isCurrentEditorRequest(requestContext)) {
+        setError(err.message || 'Error generating questions');
+      }
     } finally {
-      setGenerationStatus('');
-      setGenerating(false);
+      if (isCurrentEditorRequest(requestContext)) {
+        setGenerationStatus('');
+        setGenerating(false);
+      }
     }
   };
 
   const handleCurriculumUpload = async (file: File | undefined) => {
     if (!file) return;
+    const requestContext = editorContextRef.current;
 
     try {
       const text = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
         ? await extractTextFromPdf(file)
         : await file.text();
+      if (!isCurrentEditorRequest(requestContext)) return;
 
       setCurriculumText(text);
       const chapters = parseCurriculumChapters(text);
       setSelectedChapter(chapters[0] || '');
     } catch (err) {
+      if (!isCurrentEditorRequest(requestContext)) return;
+
       console.error(err);
       setError('Could not read that curriculum file. Please try a text, CSV, Markdown, or selectable-text PDF file.');
     }
@@ -404,8 +521,18 @@ export default function TestEditor() {
 
   const handleSave = async () => {
     const finalQuestions = [...questions, ...aiDrafts];
-    const slug = slugify(title);
+    const slug = resolveTestSlug(title, user?.uid, id ? loadedSlug : undefined);
     
+    if (authRequired === 'true' && !user?.uid) {
+      setError('Authentication required.');
+      return;
+    }
+
+    if (id && !canEditOwnedRecord(authRequired, loadedOwnerId, user?.uid)) {
+      setError('You do not have access to save this test.');
+      return;
+    }
+
     if (!title.trim() || finalQuestions.length === 0) {
       setError('Title and at least 1 question are required.');
       return;
@@ -413,22 +540,26 @@ export default function TestEditor() {
     setSaving(true);
     setError('');
     try {
-      const p: Test = {
+      const updatePayload: TestUpdatePayload = {
         title: title.trim(),
         level,
         slug,
         description,
         aiPrompt,
         questions: finalQuestions,
-        createdAt: id ? undefined : Date.now(),
         updatedAt: Date.now(),
         isActive: true,
-      } as Test;
+      };
 
       if (id) {
-        await updateDoc(doc(db, 'tests', id), p as any);
+        await updateDoc(doc(db, 'tests', id), updatePayload);
       } else {
-        await addDoc(collection(db, 'tests'), p);
+        const createPayload: TestCreatePayload = {
+          ...updatePayload,
+          ownerId: user?.uid || '',
+          createdAt: Date.now(),
+        };
+        await addDoc(collection(db, 'tests'), createPayload);
       }
       navigate('/tests');
     } catch (err: any) {
@@ -478,6 +609,7 @@ export default function TestEditor() {
   };
 
   if (loading) return <div className="animate-pulse">Loading...</div>;
+  if (accessDenied) return <div className="p-8">{error || 'You do not have access to this test.'}</div>;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-24">

@@ -1,8 +1,28 @@
-import { TestResult, TopicBreakdown } from '../types';
+import { Question, TestLevel, TestResultDraft, TopicBreakdown } from '../types';
 
-export function calculateTestResults(test: any, answers: Record<string, string>, studentInfo: any): Omit<TestResult, 'id' | 'isNew' | 'completedAt'> {
+export interface MarkableTest {
+  id?: string;
+  slug: string;
+  title: string;
+  level: TestLevel;
+  questions: Question[];
+}
+
+export interface StudentResultInfo {
+  studentFirstName: string;
+  studentLastName: string;
+  parentName?: string;
+  parentEmail?: string;
+  notes?: string;
+}
+
+export function calculateTestResults(
+  test: MarkableTest,
+  answers: Record<string, string>,
+  studentInfo: StudentResultInfo,
+): TestResultDraft {
   let score = 0;
-  const questionResults = test.questions.map((q: any) => {
+  const questionResults = test.questions.map((q) => {
     const selected = answers[q.id] || "";
     const isCorrect = selected === q.correctAnswer;
     if (isCorrect) score++;
@@ -21,7 +41,7 @@ export function calculateTestResults(test: any, answers: Record<string, string>,
   const percentage = Math.round((score / test.questions.length) * 100);
 
   const topicsMap: Record<string, { total: number; correct: number }> = {};
-  questionResults.forEach((qr: any) => {
+  questionResults.forEach((qr) => {
     if (!topicsMap[qr.topic]) {
       topicsMap[qr.topic] = { total: 0, correct: 0 };
     }
@@ -47,17 +67,17 @@ export function calculateTestResults(test: any, answers: Record<string, string>,
   });
 
   const weakTopics = topicBreakdown.filter(t => t.status === 'weak').map(t => t.topic);
-  
+
   // Collect unique targets from incorrectly answered questions
   const uniqueTargets = new Set<string>();
-  questionResults.forEach((qr: any) => {
+  questionResults.forEach((qr) => {
     if (!qr.isCorrect && qr.target) {
       uniqueTargets.add(qr.target);
     }
   });
 
   return {
-    testId: test.id,
+    testId: test.id ?? "",
     testSlug: test.slug,
     testTitle: test.title,
     testLevel: test.level,
